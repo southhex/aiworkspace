@@ -7,6 +7,8 @@ import type { Conversation } from "@/lib/types";
 export function Sidebar({
   conversations,
   activeId,
+  streamingId,
+  unread,
   open,
   onSelect,
   onNew,
@@ -17,6 +19,8 @@ export function Sidebar({
 }: {
   conversations: Conversation[];
   activeId: string | null;
+  streamingId: string | null;
+  unread: Set<string>;
   open: boolean;
   onSelect: (id: string) => void;
   onNew: () => void;
@@ -92,6 +96,8 @@ export function Sidebar({
               key={c.id}
               c={c}
               activeId={activeId}
+              streamingId={streamingId}
+              unread={unread}
               onSelect={onSelect}
               onArchive={onArchive}
               onUnarchive={onUnarchive}
@@ -115,6 +121,8 @@ export function Sidebar({
                   key={c.id}
                   c={c}
                   activeId={activeId}
+                  streamingId={streamingId}
+                  unread={unread}
                   onSelect={onSelect}
                   onArchive={onArchive}
                   onUnarchive={onUnarchive}
@@ -172,6 +180,8 @@ export function Sidebar({
 function ChatRow({
   c,
   activeId,
+  streamingId,
+  unread,
   onSelect,
   onArchive,
   onUnarchive,
@@ -179,6 +189,8 @@ function ChatRow({
 }: {
   c: Conversation;
   activeId: string | null;
+  streamingId: string | null;
+  unread: Set<string>;
   onSelect: (id: string) => void;
   onArchive: (id: string) => void;
   onUnarchive: (id: string) => void;
@@ -187,6 +199,9 @@ function ChatRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const isActive = c.id === activeId;
+  const summoning = c.id === streamingId;
+  const unseen = unread.has(c.id);
+  const showIndicator = summoning || unseen;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -229,19 +244,29 @@ function ChatRow({
       >
         {c.title}
       </button>
-      <button
-        onClick={() => setMenuOpen((v) => !v)}
-        className={`px-2 py-1 text-[18px] leading-none text-muted transition hover:text-marble md:px-1 md:text-base ${
-          menuOpen
-            ? "opacity-100"
-            : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
-        }`}
-        aria-label="Conversation options"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-      >
-        ⋯
-      </button>
+      <span className="flex shrink-0 items-center gap-1">
+        {showIndicator && (
+          <span
+            className={`status-dot status-dot-gold ${
+              summoning ? "glow-pulse" : ""
+            }`}
+            title={summoning ? "summoning" : "unseen reply"}
+          />
+        )}
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          className={`px-2 py-1 text-[18px] leading-none text-muted transition hover:text-marble md:px-1 md:text-base ${
+            menuOpen
+              ? "opacity-100"
+              : "opacity-100 md:opacity-0 md:group-hover:opacity-100"
+          }`}
+          aria-label="Conversation options"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
+          ⋯
+        </button>
+      </span>
 
       {menuOpen && (
         <div

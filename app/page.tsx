@@ -21,7 +21,10 @@ export default function Home() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [providerId, setProviderId] = useState<string>("");
   const [model, setModel] = useState<string>("");
-  const [streaming, setStreaming] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [unread, setUnread] = useState<Set<string>>(() => new Set());
+  const streaming = streamingId !== null;
+  const activeIdRef = useRef<string | null>(activeId);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -73,6 +76,12 @@ export default function Home() {
     () => conversations.find((c) => c.id === activeId) || null,
     [conversations, activeId],
   );
+
+  // Mirror activeId into a ref so stream-completion callbacks read the latest value.
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
   const currentProvider = providers.find((p) => p.id === providerId);
 
   // Keep model in sync when the active conversation or provider changes.
@@ -173,7 +182,7 @@ export default function Home() {
     list = list.map((c) => (c.id === id ? withUser : c));
     persist(list);
 
-    setStreaming(true);
+    setStreamingId(id);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
@@ -220,7 +229,15 @@ export default function Home() {
       ctrl.signal,
     );
 
-    setStreaming(false);
+    setStreamingId(null);
+    // If the reply landed in a chat the user isn't currently viewing, flag it unseen.
+    if (activeIdRef.current !== id) {
+      setUnread((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    }
     abortRef.current = null;
     // Persist the finished turn immediately rather than waiting out the debounce.
     void flushConversations();
@@ -229,7 +246,7 @@ export default function Home() {
   const handleStop = () => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setStreaming(false);
+    setStreamingId(null);
   };
 
   const noProviders = providers.length === 0;
@@ -239,10 +256,18 @@ export default function Home() {
       <Sidebar
         conversations={conversations}
         activeId={activeId}
+        streamingId={streamingId}
+        unread={unread}
         open={sidebarOpen}
         onSelect={(id) => {
           setActiveId(id);
           setSidebarOpen(false);
+          setUnread((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
         }}
         onNew={handleNew}
         onArchive={handleArchive}
@@ -312,15 +337,15 @@ export default function Home() {
           ) : (
             <MessageList
               messages={active?.messages || []}
-              streaming={streaming}
+              streaming={streaming && active?.id === streamingId}
             />
           )}
         </div>
 
         {/* Composer */}
         <Composer
-          disabled={noProviders}
-          streaming={streaming}
+          disabled={noProviders || (streaming && active?.id !== streamingId)}
+          streaming={streaming && active?.id === streamingId}
           onSend={handleSend}
           onStop={handleStop}
         />
