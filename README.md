@@ -1,4 +1,4 @@
-# Hermes Chat
+# Niphates
 
 A self-hosted, installable (PWA) chat web app for talking to your **Hermes
 Agent** and other LLM APIs — Ollama, OpenRouter, KiloCode, OpenAI, Anthropic —
