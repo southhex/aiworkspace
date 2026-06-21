@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export interface SelectOption {
@@ -8,8 +8,9 @@ export interface SelectOption {
   label: string;
 }
 
-interface DropdownPos {
+interface Anchor {
   top: number;
+  bottom: number;
   left: number;
   minWidth: number;
 }
@@ -32,7 +33,8 @@ export function Select({
   valueClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<DropdownPos | null>(null);
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
+  const [placement, setPlacement] = useState<"below" | "above">("below");
   const [mounted, setMounted] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -44,14 +46,30 @@ export function Select({
     if (disabled) return;
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
-      setPos({
-        top: rect.bottom,
+      setAnchor({
+        top: rect.top,
+        bottom: rect.bottom,
         left: rect.left,
         minWidth: Math.max(rect.width, 120),
       });
+      setPlacement("below"); // assume below; the layout effect flips if it'd overflow
     }
     setOpen(true);
   };
+
+  // Flip the menu above the trigger when it would run off the bottom of the
+  // viewport (e.g. the model selector docked in the composer). Runs before
+  // paint so there's no visible jump.
+  useLayoutEffect(() => {
+    if (!open || !anchor || !dropdownRef.current) return;
+    const margin = 8;
+    const spaceBelow = window.innerHeight - anchor.bottom - margin;
+    const spaceAbove = anchor.top - margin;
+    const contentHeight = dropdownRef.current.scrollHeight;
+    setPlacement(
+      contentHeight > spaceBelow && spaceAbove > spaceBelow ? "above" : "below",
+    );
+  }, [open, anchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -72,18 +90,26 @@ export function Select({
   }, [open]);
 
   const label = current?.label ?? placeholder ?? value;
+  const margin = 8;
 
   const dropdown =
-    open && pos && options.length > 0 ? (
+    open && anchor && options.length > 0 ? (
       <div
         ref={dropdownRef}
         role="listbox"
         style={{
           position: "fixed",
-          top: pos.top,
-          left: pos.left,
-          minWidth: pos.minWidth,
+          left: anchor.left,
+          minWidth: anchor.minWidth,
           zIndex: 9999,
+          maxHeight:
+            (placement === "above"
+              ? anchor.top
+              : window.innerHeight - anchor.bottom) - margin,
+          overflowY: "auto",
+          ...(placement === "above"
+            ? { bottom: window.innerHeight - anchor.top }
+            : { top: anchor.bottom }),
         }}
         className="border border-hairlit bg-panel2 shadow-lg"
       >

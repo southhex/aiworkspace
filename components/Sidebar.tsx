@@ -1,7 +1,8 @@
 // components/Sidebar.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { PanelLeftClose } from "lucide-react";
 import { CHAMBERS, type ChamberId } from "@/components/chambers";
 import type { Conversation } from "@/lib/types";
@@ -201,18 +202,54 @@ function ChatRow({
   onDelete: (id: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{
+    top: number;
+    bottom: number;
+    right: number;
+  } | null>(null);
+  const [placement, setPlacement] = useState<"below" | "above">("below");
+  const [mounted, setMounted] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const isActive = c.id === activeId;
   const summoning = c.id === streamingId;
   const unseen = unread.has(c.id);
   const showIndicator = summoning || unseen;
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const openMenu = () => {
+    if (!menuOpen && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setAnchor({ top: r.top, bottom: r.bottom, right: r.right });
+      setPlacement("below");
+    }
+    setMenuOpen((v) => !v);
+  };
+
+  // Position the portaled menu, flipping it above the button when there's no
+  // room below (bottom-pinned archived rows). Portaling to <body> also frees it
+  // from the sidebar list's overflow-y-auto clipping. Runs before paint.
+  useLayoutEffect(() => {
+    if (!menuOpen || !anchor || !menuRef.current) return;
+    const margin = 8;
+    const spaceBelow = window.innerHeight - anchor.bottom - margin;
+    const h = menuRef.current.scrollHeight;
+    setPlacement(
+      h > spaceBelow && anchor.top - margin > spaceBelow ? "above" : "below",
+    );
+  }, [menuOpen, anchor]);
+
+  useEffect(() => {
     if (!menuOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMenuOpen(false);
@@ -231,6 +268,54 @@ function ChatRow({
       onDelete(c.id);
     }
   };
+
+  const menu =
+    menuOpen && anchor ? (
+      <div
+        ref={menuRef}
+        role="menu"
+        style={{
+          position: "fixed",
+          right: Math.max(8, window.innerWidth - anchor.right),
+          zIndex: 9999,
+          ...(placement === "above"
+            ? { bottom: window.innerHeight - anchor.top + 4 }
+            : { top: anchor.bottom + 4 }),
+        }}
+        className="w-36 overflow-hidden border border-hairlit bg-panel py-1 text-sm shadow-lg"
+      >
+        {c.archived ? (
+          <button
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              onUnarchive(c.id);
+            }}
+            className="block w-full px-3 py-2.5 text-left font-mono text-[14px] uppercase tracking-[0.1em] md:py-1.5 md:text-[12px] text-parchdk hover:bg-panel2"
+          >
+            UNARCHIVE
+          </button>
+        ) : (
+          <button
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              onArchive(c.id);
+            }}
+            className="block w-full px-3 py-2.5 text-left font-mono text-[14px] uppercase tracking-[0.1em] md:py-1.5 md:text-[12px] text-parchdk hover:bg-panel2"
+          >
+            ARCHIVE
+          </button>
+        )}
+        <button
+          role="menuitem"
+          onClick={handleDelete}
+          className="block w-full px-3 py-2.5 text-left font-mono text-[14px] uppercase tracking-[0.1em] md:py-1.5 md:text-[12px] text-carnelian hover:bg-panel2"
+        >
+          DELETE
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div
@@ -258,7 +343,8 @@ function ChatRow({
           />
         )}
         <button
-          onClick={() => setMenuOpen((v) => !v)}
+          ref={btnRef}
+          onClick={openMenu}
           className={`px-2 py-1 text-[18px] leading-none text-muted transition hover:text-marble md:px-1 md:text-base ${
             menuOpen
               ? "opacity-100"
@@ -272,43 +358,7 @@ function ChatRow({
         </button>
       </span>
 
-      {menuOpen && (
-        <div
-          role="menu"
-          className="absolute right-1 top-9 z-40 w-36 overflow-hidden border border-hairlit bg-panel py-1 text-sm shadow-lg"
-        >
-          {c.archived ? (
-            <button
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onUnarchive(c.id);
-              }}
-              className="block w-full px-3 py-2.5 text-left font-mono text-[14px] uppercase tracking-[0.1em] md:py-1.5 md:text-[12px] text-parchdk hover:bg-panel2"
-            >
-              UNARCHIVE
-            </button>
-          ) : (
-            <button
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onArchive(c.id);
-              }}
-              className="block w-full px-3 py-2.5 text-left font-mono text-[14px] uppercase tracking-[0.1em] md:py-1.5 md:text-[12px] text-parchdk hover:bg-panel2"
-            >
-              ARCHIVE
-            </button>
-          )}
-          <button
-            role="menuitem"
-            onClick={handleDelete}
-            className="block w-full px-3 py-2.5 text-left font-mono text-[14px] uppercase tracking-[0.1em] md:py-1.5 md:text-[12px] text-carnelian hover:bg-panel2"
-          >
-            DELETE
-          </button>
-        </div>
-      )}
+      {mounted && menu ? createPortal(menu, document.body) : null}
     </div>
   );
 }
