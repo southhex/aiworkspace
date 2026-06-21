@@ -1,329 +1,262 @@
-# Handoff: Niphates — Visual Language Reskin
+# Handoff: Niphates — Chambers Navigation & Composer Redesign
 
 ## Overview
 
-This package re-skins the existing **Hermes Chat** app (Next.js 15 / React 19 /
-TypeScript / Tailwind PWA) into a new visual identity: **Niphates** — a
-"classics-inspired terminal" aesthetic (inscriptional serif display, terminal
-monospace, a reading serif, gem-and-marble palette, sharp corners, bright
-hairline rules).
+This is the **second** Niphates handoff. The first round reskinned the existing
+**Hermes Chat** app (Next.js 15 / React 19 / TypeScript / Tailwind PWA) into the
+Niphates visual identity — that work is assumed **already merged**. This round is
+a **layout / information-architecture change** on top of that skin, plus a
+ground-up redesign of the message composer.
 
-**This is a styling/identity change only.** All app architecture, routing, data
-flow, providers, streaming, and the two-plane Hermes API stay exactly as they
-are. Do not touch `lib/`, `app/api/`, the connectors, or the stores. Only the
-presentation layer changes: fonts, colors, borders, copy/labels, and the chat
-message rendering.
+It introduces a **"Chambers"** navigation model (the app is now a persistent
+workspace shell whose main pane swaps between sections), folds the old
+standalone `/hermes` Control page into a chamber, moves the theme toggle into
+Settings, and rebuilds the composer in a claude.ai-style stacked layout.
+
+**Scope:** presentation + client-side view state only. Do **not** touch `lib/`,
+`app/api/`, the connectors, the stores, streaming, or the Hermes management API.
+No data flow changes. The conversation model, providers, and persistence stay
+exactly as they are — they just get re-parented under the Dialogue chamber.
 
 ## About the Design Files
 
-The files in `prototypes/` are **design references written in HTML** (Design
-Components), not production code to copy verbatim. They show the intended look
-and behavior. Your job is to **recreate them in the existing Next.js + Tailwind
-codebase using its established patterns** (Tailwind utility classes, the
-existing component structure). Do not import the HTML; translate it.
+The files in `prototypes/` are **design references written in HTML** (single-file
+Design Components), not production code to copy verbatim. They encode the
+intended look, spacing, copy, and interaction. **Recreate them in the existing
+Next.js/React/Tailwind codebase using its established components and patterns** —
+do not ship the HTML. Tailwind class names referenced below already exist in the
+current app (they map to the CSS variables in `app/globals.css`).
 
-- `prototypes/Niphates Visual Language.dc.html` — the spec board: palette, type
-  system, components, and the "dialogue" message treatment. **Read this first.**
-- `prototypes/Niphates.dc.html` — the applied, interactive app (Chat, Settings,
-  Control) in the new language. This is the target look for the real screens.
+- `prototypes/Niphates.dc.html` — the full interactive prototype (all chambers,
+  settings, composer, sidebar collapse, theme switch). This is the source of truth.
+- `prototypes/Niphates Visual Language.dc.html` — the type/color/component spec
+  sheet from round one (unchanged; for reference).
+- `screenshots/` — current-state renders (see list at the bottom).
 
 ## Fidelity
 
-**High-fidelity.** Colors, fonts, letter-spacing, and borders are final — match
-them exactly. Spacing/sizing should be matched closely but may be nudged to fit
-the real responsive layout and Tailwind's scale.
+**High-fidelity.** Colors, typography, spacing, and interactions are final.
+Recreate pixel-faithfully using the codebase's existing tokens/utilities. All
+values below are exact.
 
 ---
 
-## Design Tokens
+# What changed (vs. the current codebase)
 
-### Typography — three faces (add via `next/font/google` or `<link>`)
+Everything below is a **delta** against the repo as it stands today. Each item
+names the file(s) to edit.
 
-| Role | Family | Usage |
-|------|--------|-------|
-| Display / titles | **Cinzel** (400,500,600,700) | Wordmark, page `<h1>`/`<h2>`, big numerals. ALL-CAPS, letter-spaced. |
-| UI / terminal | **IBM Plex Mono** (400,500,600 + italic 400) | Default body font, all labels, buttons, inputs, sidebar, code, the **operator's** chat text. |
-| Reading / agent | **Spectral** (400,500,600 + italic) | The **agent's** chat replies (long-form prose) and italic epigraphs/blurbs. |
+## A. Structural changes
 
-IBM Plex Mono replaces `system-ui` as the base `font-sans`. Suggested
-`tailwind.config.ts`:
+### A1. New "Chambers" navigation model  ·  `components/Sidebar.tsx`, `app/page.tsx`
+The app becomes a **persistent shell**: the sidebar and the top bar stay mounted;
+the **main pane swaps content by active chamber**. Five chambers, shown as a list
+at the top of the sidebar (directly under the brand, **above** the New Dialogue
+button):
 
-```ts
-fontFamily: {
-  sans: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'], // UI default
-  display: ['Cinzel', 'serif'],
-  read: ['Spectral', 'serif'],
-  mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
-},
+| Chamber  | Numeral | Content |
+|----------|---------|---------|
+| Dialogue | I       | The current chat interface (messages + composer) |
+| Studio   | II      | Placeholder — "not yet built" |
+| Library  | III     | Placeholder — "not yet built" |
+| Council  | IV      | Placeholder — "not yet built" |
+| Command  | V       | The former `/hermes` Control panel, rendered in-pane |
+
+Each row: chamber name (left, mono, uppercase) + Roman numeral (right, Cinzel).
+**Active indicator is subtle and type-only** — the active row's title goes to
+`--marble` and its numeral lights to `--gold` with a soft glow; all other rows
+are dimmed (`--muted` title, `--mutedlo` numeral). **No background fill, no left
+border** on the active row.
+
+Recommended implementation: introduce a client state value
+`activeChamber: 'dialogue' | 'studio' | 'library' | 'council' | 'command'`
+(e.g. in `app/page.tsx` or a small context). Chambers are **in-app views, not
+routes** — clicking a chamber swaps the main pane, it does not navigate.
+
+### A2. Command (V) replaces the standalone Control page  ·  `app/hermes/page.tsx` → in-pane view
+The old `/hermes` route rendered a **full-screen** page with its own command bar
+(`NIPHATES // CONTROL` + `← RETURN`). That chrome is **removed**. Its body — the
+**Connection**, **Model**, and **System** sections plus the intro paragraph — now
+renders inside the workspace main pane (sidebar + top bar still visible) when the
+**Command** chamber is active. Heading becomes **"Command"** (Cinzel, ⚡ glyph),
+same intro/sections otherwise.
+Move the markup out of `app/hermes/page.tsx` into a `CommandView` component
+rendered by the workspace. The `/hermes` route can be retired or left as a
+redirect into the workspace.
+
+### A3. Chat list is Dialogue-scoped  ·  `components/Sidebar.tsx`
+The **New Dialogue** button, the **conversation list**, and the **Archived** group
+render **only when the Dialogue chamber is active**. For any other chamber the
+sidebar shows a subsection placeholder instead:
 ```
-
-Load fonts in `app/layout.tsx` (preferred, via `next/font/google`) or by
-`<link>` in `globals.css`:
+<NAME> · SUBSECTIONS      (mono, 9.5px, letter-spacing .24em, --mutedlo)
+Not yet built.            (Spectral italic, 13px, --muted)
 ```
-https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Spectral:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap
-```
+This area is reserved for each chamber's future sub-navigation.
 
-### Color palette (Obsidian — default dark ground)
+### A4. Settings moved behind a top-bar icon + gains Appearance  ·  `app/page.tsx`, `app/settings/page.tsx`
+- Settings is **no longer a sidebar link**. It opens from a **gear icon** in the
+  top-right of the top bar. (Keep `app/settings/page.tsx` as the settings view;
+  it can stay a route reached by the gear, or become an in-app view — your call,
+  but the gear is the only entry point now.)
+- The settings page gets a new **Appearance** section **above Providers**,
+  containing the theme toggle (see A5). Section header uses the same treatment as
+  "Providers": a ☾ glyph + Cinzel 32px title.
+- The settings command bar keeps `NIPHATES // SETTINGS` + `← RETURN`; RETURN now
+  returns to the workspace (whatever chamber was active).
 
-Add under `theme.extend.colors` (replaces the slate+amber set):
+### A5. Theme toggle relocated  ·  `components/Sidebar.tsx` → `app/settings/page.tsx`
+The ☾ OBSIDIAN / ☀ MARBLE segmented toggle is **removed from the sidebar footer**
+and placed in Settings → Appearance. Behavior is unchanged (writes
+`localStorage['niphates-theme']` and sets `data-theme` on `<html>`). Segmented
+control: two equal buttons, 1px `--hair` border, active button filled `--gold`
+with `--goldink` text, inactive transparent with `--muted` text; max-width ~340px.
 
-```ts
-colors: {
-  void:    '#08070A', // deepest wells: inputs, code blocks, system pre
-  ground:  '#100E14', // page background
-  paneldk: '#0C0A10', // sidebar, headers, section cards
-  panel:   '#18151D', // chips, selects, raised rows
-  panel2:  '#1F1B25', // hover/raised
-  hair:    '#2E2833', // default hairline border
-  hairlit: '#463C4E', // brighter rule: focusable field borders
+### A6. Sidebar collapse  ·  `components/Sidebar.tsx`, `app/page.tsx`
+- The brand row's **"IV" badge is replaced by a collapse-sidebar icon button**
+  (a panel/rectangle-with-left-rail glyph — e.g. lucide `PanelLeftClose`).
+  Clicking it hides the entire `<aside>`.
+- When collapsed, a **reveal button** (same panel glyph, e.g. lucide `PanelLeft`)
+  appears at the **top-left of the top bar**.
+- New client state: `sidebarOpen: boolean` (default true). (This subsumes the
+  existing mobile drawer `open` prop — unify them.)
 
-  marble:  '#ECE6D8', // primary text / titles
-  parch:   '#B8B0A0', // secondary text
-  parchdk: '#D6CFC0', // body text (operator)
-  muted:   '#847C70', // tertiary / meta
-  mutedlo: '#6F6760', // placeholder / disabled
+### A7. Top bar reorganised  ·  `app/page.tsx`
+- The **provider selector moves to the top-right** of the top bar; the **gear**
+  (settings) sits to its right.
+- The **model selector is removed from the top bar** — it now lives inside the
+  composer (see B1).
+- The header **loses its bottom border and background** (transparent, borderless).
+- Mobile hamburger is replaced by the sidebar reveal button (A6) on the left.
 
-  gold:    '#C9A24B', // PRIMARY accent (gilt) — buttons, active rules, links, model name
-  goldbri: '#E3C06A', // gold hover
-  lapis:   '#4F74E0', // secondary accent — edit/focus, kickers
-  malach:  '#3A9D6E', // success / connected / provider-ok dot
-  carnelian:'#C0504A',// alert / delete / error
-  porphyry:'#8A5BB0', // the AGENT — Niphates speaker rule
-  porphlbl:'#A87FD0', // agent speaker label text (lighter porphyry)
-},
-```
+## B. Visual changes
 
-### Marble (light ground — daylight mode, REQUIRED, user-toggleable)
+### B1. Composer redesign — claude.ai-style stacked box  ·  `components/Composer.tsx`
+The composer changes from a single horizontal row (`❯ … [textarea] [SEND]`) to a
+**single bordered box with two stacked rows**:
 
-Full parity with Obsidian — same token *names*, different values. The two
-themes are a pure CSS-variable swap on a `data-theme` attribute at the app root;
-nothing else in the markup changes.
+- **Row 1 (input):** `❯` prompt glyph (`--gold`, 14px) + auto-growing `<textarea>`
+  (mono 13.5px, `--marble`, transparent, min-height 42px, max-height 200px).
+- **Row 2 (toolbar):** a flex row, items 30×30px:
+  - **Left:** `+` **attach** icon button (for attaching documents). Borderless,
+    transparent, `--parch`, hover → `--goldsoft` bg + `--gold` icon. (lucide `Plus`)
+  - **Spacer** (flex:1).
+  - **Right group:** the **model selector** chip, then a **dictation/TTS** mic
+    icon button. (lucide `Mic`)
 
-| Token | Obsidian | Marble | Notes |
-|-------|----------|--------|-------|
-| `void` | `#08070A` | `#F6F2E9` | input wells, code/system `pre` |
-| `ground` | `#100E14` | `#EFE9DB` | page background |
-| `paneldk` | `#0C0A10` | `#E3DCCB` | sidebar, headers, section cards |
-| `panel` | `#18151D` | `#F3EEE2` | chips, selects, active row |
-| `panel2` | `#1F1B25` | `#F6F2E9` | hover/raised |
-| `hair` | `#2E2833` | `#CABFA6` | default hairline |
-| `hairlit` | `#463C4E` | `#B3A98A` | focusable field border |
-| `marble` (text) | `#ECE6D8` | `#1C1813` | primary text/titles (name kept for continuity) |
-| `parch` | `#B8B0A0` | `#6B6356` | secondary text |
-| `parchdk` | `#D6CFC0` | `#3A342A` | operator body text |
-| `muted` | `#847C70` | `#8A7F6A` | meta |
-| `mutedlo` | `#6F6760` | `#A89E88` | placeholder/disabled |
-| `gold` | `#C9A24B` | `#8A6D2A` | primary accent (deepened on light) |
-| `goldbri` | `#E3C06A` | `#A4843A` | gold hover |
-| `goldink` | `#100E14` | `#F4EFE4` | text on gold buttons |
-| `lapis` | `#4F74E0` | `#2F4FB0` | secondary accent |
-| `malach` | `#3A9D6E` | `#2F8A5C` | success/connected |
-| `carnelian` | `#C0504A` | `#A8392F` | alert/delete |
-| `porphyry` | `#8A5BB0` | `#6E4A90` | agent speaker rule |
-| `porphlbl` | `#A87FD0` | `#6E4A90` | agent speaker label |
-| `agentbody` | `#E3DDD0` | `#241F17` | agent prose color |
-| `shadow-gold` | `0 0 0 1px #C9A24B, 0 0 18px rgba(201,162,75,.20)` | `0 0 0 1px #8A6D2A, 0 0 14px rgba(138,109,42,.16)` | primary/focus glow |
+Key rules:
+- **The SEND button is removed.** Submit on **Enter**; **Shift+Enter** inserts a
+  newline. (This logic already exists in `Composer.tsx`'s `onKeyDown` — just drop
+  the button.)
+- **Stop control:** while streaming, a small **square stop** icon button (lucide
+  `Square`, filled) appears at the far right in place of nothing. Borderless,
+  hover → `--carnelian`. (Replaces the old text "STOP" button.)
+- **All composer buttons are borderless** (no 1px border) — transparent bg, hover
+  tint only.
+- The **model selector** keeps a **`--panel` background** (no border) and shows
+  `[model name ▾]` in `--gold` — **no green status dot** (the dot the header
+  version had is removed here).
+- Outer box: 1px `--hairlit` border, `--void` bg, 12×14px padding, `gap:11px`
+  between rows. Focus-within glows gold (existing `.nxfield` behavior /
+  `--glow-focus`).
 
-#### Implementing the toggle
+The container max-width matches the message column: **720px**, centered.
 
-The prototype (`prototypes/Niphates.dc.html`) ships this working — mirror it:
+### B2. Message scaling & user-bubble inset  ·  `components/MessageList.tsx`
+The message column is tightened:
+- Column: `max-width:720px` (was 760), `gap:20px` (was ~28), padding `26px 24px 32px`.
+- **Agent** body text: **16px** (was 18px), Spectral, line-height 1.62, `--agentbody`.
+- **User** body text: **14px**, mono, `--parchdk`.
+- **User message bubble is inset**: keep its 1px `--hair` border + `--panel`
+  bg + 14×16px padding, and add **`margin-left: 64px`** so the operator turn is
+  offset from the left rather than full-width. Agent turns remain borderless and
+  full-width.
+- Labels (`OPERATOR` gold / `NIPHATES` porphyry-light) sit tight above content
+  (`margin-bottom:4px`), mono 10.5px, letter-spacing .28em.
 
-1. **Define both palettes as CSS variables** keyed by a root attribute, e.g. in
-   `globals.css`:
-   ```css
-   [data-theme="obsidian"] { --ground:#100E14; --gold:#C9A24B; /* …all tokens… */ }
-   [data-theme="marble"]   { --ground:#EFE9DB; --gold:#8A6D2A; /* …all tokens… */ }
-   ```
-   Either consume the vars directly (`bg-[var(--ground)]`, `text-[var(--marble)]`)
-   or, cleaner in Tailwind, point the `theme.extend.colors` entries at the vars
-   (`ground: 'var(--ground)'`, …) so existing `bg-ground` utilities just work and
-   re-theme for free.
-2. **Toggle** = set `data-theme` on `<html>` (or the app shell). Persist the
-   choice to `localStorage` and read it on load; default to `obsidian`. Optional:
-   seed from `window.matchMedia('(prefers-color-scheme: light)')` on first run.
-3. **Toggle control** lives in two places (both in the prototype): the **sidebar
-   footer** as a 2-segment `☾ OBSIDIAN / ☀ MARBLE` switch (active = gold fill),
-   and a compact `☀ MARBLE ⇄ ☾ OBSIDIAN` button in the Settings/Control **command
-   bars**. A single switch is fine if you prefer — put it in the sidebar footer.
-4. Update the PWA: `viewport.themeColor` and the manifest `theme_color` should
-   track the active theme (`#100E14` obsidian / `#EFE9DB` marble) if you want the
-   browser chrome to match; static `#100E14` is acceptable for v1.
+### B3. Sidebar spacing cleanup  ·  `components/Sidebar.tsx`
+- **Remove the divider** (border-bottom) between the brand row and the chamber
+  list; tighten the brand row padding to `13px 16px` to recover vertical space.
+- Chamber nav block: padding `4px 9px 9px`, rows `8px 11px`, separated from the
+  Dialogue subsection below by a single `--hair` border-bottom.
+- **Archived** row gets extra bottom padding (`padding: 8px 13px 20px`) so it
+  lifts off the very bottom edge of the viewport.
 
-No component markup differs between themes — if you find yourself writing
-theme-conditional JSX for colors, lift it into the variables instead.
-
-### Shape, border, glow
-
-- **Corners: sharp.** `border-radius: 0` everywhere (kill all `rounded-*`).
-  At most 1px on nothing — these are inscriptions and terminal panes.
-- **Hairlines:** 1px solid `hair`. Focusable inputs use `hairlit`.
-- **Bright outline / glow** on primary + focus only:
-  - Gold button: `box-shadow: 0 0 0 1px #C9A24B, 0 0 18px rgba(201,162,75,.20);`
-  - Input focus: border → `gold`, add `0 0 0 1px #C9A24B, 0 0 18px rgba(201,162,75,.18)`.
-  - **Status dots** are 6–8px squares (not circles) with a colored glow:
-    `box-shadow: 0 0 7px <color>` (malachite/gold/carnelian).
-- **Letter-spacing:** labels/buttons `0.16–0.28em` uppercase; Cinzel titles
-  `0.06–0.14em`; mono body normal.
-- `::selection { background:#C9A24B; color:#100E14; }`
-- Scrollbars: thumb `#2E2833`, transparent track.
+## C. Parked (do NOT implement)
+A full-screen **background noise/grain texture** was explored this round and
+**pulled**. It is intentionally not in the current prototype. Do not add any
+noise overlay — it's a future consideration.
 
 ---
 
-## Screens / Views
+# Reference
 
-### Global chrome
-- App background `ground` (#100E14), base text `marble`, base font IBM Plex Mono.
-- Sidebar + section headers use the darker `paneldk` (#0C0A10).
-- The settings/control pages get a thin top **command bar**: 1px gold bottom
-  border, `NIPHATES // SETTINGS` (or `// CONTROL`) at left in 11px gold,
-  `0.16em` tracking, and a `← RETURN` link at right (`muted` → `gold` on hover).
+## Chambers — exact active/inactive styling
+- Row: `display:flex; justify-content:space-between; align-items:center;
+  padding:8px 11px;` borderless, transparent bg.
+- Name: `font-family: var(--font-mono); font-size:11.5px; letter-spacing:.2em;
+  text-transform:uppercase;` color = active `--marble`, else `--muted`.
+- Numeral: `font-family: var(--font-cinzel); font-size:14px; letter-spacing:.05em;`
+  color = active `--gold`, else `--mutedlo`; active also
+  `text-shadow: 0 0 10px rgba(201,162,75,.55)`.
 
-### 1. Sidebar (`components/Sidebar.tsx`)
-- Width ~264px, bg `paneldk`, right border 1px `hair`.
-- **Brand block** (top, 1px `hair` bottom border): `NIPHATES` in Cinzel 600,
-  18px, `0.14em` tracking, `marble`; a small Cinzel `IV` at right in
-  `rgba(201,162,75,.6)`.
-- **New chat button:** ghost style — `transparent` bg, 1px `gold` border, `gold`
-  text, label `❯ NEW DIALOGUE`, 10.5px, `0.18em` tracking, full width. Hover:
-  `bg rgba(201,162,75,.10)`.
-- **Conversation rows:** mono 12.5px. Each row has a **2px left border**:
-  `gold` + bg `panel` when active (text `marble`), else transparent border +
-  text `muted`. The `⋯` options button stays (mono). Row menu: 1px `hairlit`
-  border on `panel`, items `ARCHIVE` (parchdk) / `DELETE` (carnelian),
-  uppercase 12px.
-- **Archived divider:** `▸ ARCHIVED · N`, 10px, `0.2em` tracking, `muted`,
-  top hairline.
-- **Footer links:** `⚡ CONTROL` and `⚙ SETTINGS`, 11px, `0.16em` tracking,
-  `parch` → `marble` + bg `panel` on hover. (These currently navigate to
-  `/hermes` and `/settings` — keep the routes.)
+## Placeholder chamber main pane (Studio / Library / Council)
+Centered empty state:
+- Numeral: Cinzel 13px, `--gold`, letter-spacing .34em, `text-shadow:0 0 10px rgba(201,162,75,.5)`, margin-bottom 14px.
+- Title: Cinzel 600, 40px, `--marble`, letter-spacing .1em.
+- Gold hairline divider (`linear-gradient(90deg,transparent,var(--gold),transparent)`, 1px, max-width 240px).
+- Line: Spectral italic 16px, `--parch` — copy: *"This chamber is not yet built."*
 
-### 2. Chat header (`app/page.tsx` header)
-- Bg `paneldk`, bottom 1px `hair`.
-- **Provider select:** wrapped in a `panel` chip with 1px `hair` border; a 6px
-  malachite glow-square status dot at left; native `<select>` made transparent
-  (`appearance:none`), mono 12.5px, `marble`.
-- **Model select:** same chip treatment, text in `gold`, trailing `▾` in `muted`.
+## Interactions & behavior
+- **Chamber select:** sets `activeChamber`; lights that numeral; swaps main pane;
+  swaps sidebar body (Dialogue list vs. subsection placeholder). Does not navigate.
+- **Sidebar collapse:** brand icon hides `<aside>`; reveal icon in top bar restores it.
+- **Settings:** gear opens settings; RETURN goes back to the active chamber.
+- **Composer:** Enter submits, Shift+Enter newline; textarea auto-grows to 200px;
+  Stop (square) shows only while streaming; attach (`+`) and mic are present but
+  need no behavior yet (wire to real handlers when those features land).
+- **Theme:** OBSIDIAN/MARBLE toggle in Settings → Appearance; persists to
+  `localStorage['niphates-theme']`, applied via `data-theme` on `<html>`.
 
-### 3. Message list — "The Dialogue" (`components/MessageList.tsx`)
-**This is the signature change. Replace chat bubbles with a transcript.**
-- Container: centered column, `max-width: 760px`, vertical gap ~28px, padding
-  `34px 24px 40px`.
-- **Each message is a block, not a bubble:**
-  - A **2px left rule**: `gold` for the user, `porphyry` (#8A5BB0) for the agent.
-  - **Speaker label** above the text: mono 10.5px, `0.28em` tracking — `OPERATOR`
-    in `gold` for the user, `NIPHATES` in `porphlbl` (#A87FD0) for the agent.
-  - **Body:**
-    - User: IBM Plex Mono, 14px, color `parchdk` (#D6CFC0).
-    - Agent: **Spectral serif, 18px, line-height 1.62, color #E3DDD0.** This is
-      where the markdown renders — keep `ReactMarkdown` + `remark-gfm`, but
-      restyle `.msg-content` (see below).
-  - No background fill, no rounded corners, no max-width bubble — full column
-    width inside the 760px container, `white-space: pre-wrap`.
-- **"Thinking" / streaming placeholder:** a pulsing 8px **gold glow-square**
-  (`@keyframes` opacity .35→1, 1.1s) + the word `summoning…` in Spectral italic
-  `parch`. (Replaces the spinner + "Thinking…".)
-- **Empty state:** centered — a Cinzel kicker `❯ THE MIND IS ITS OWN PLACE`
-  (11px, `0.34em`, `lapis`), `NIPHATES` in Cinzel 600 ~46px, a centered gold
-  gradient hairline, then a Spectral-italic line: *"Summon the agent. Hermes is
-  ready out of the box — add more providers in Settings."*
+## State (new client-side view state)
+- `activeChamber: 'dialogue' | 'studio' | 'library' | 'council' | 'command'` (default `'dialogue'`)
+- `sidebarOpen: boolean` (default `true`; unify with the existing mobile drawer state)
+- `inSettings` (or a `/settings` route reached only via the gear)
+- Existing state is unchanged: `conversations`, `activeId`, `providerId`, `model`,
+  `streamingId`, `theme`, etc.
 
-#### `.msg-content` markdown restyle (`globals.css`)
-Keep the markdown structure, swap the chrome to Niphates:
-- Base: agent bubble already sets Spectral 18px — so `.msg-content` inherits it.
-- Links: `color: #C9A24B; text-underline-offset: 2px;` hover `#E3C06A`.
-- Inline `code`: `font-family:"IBM Plex Mono"; background:#18151D; border:1px solid #2E2833; border-radius:0; padding:.05em .35em; font-size:.8em; color:#D6CFC0;`
-- `pre`: `background:#08070A; border:1px solid #2E2833; border-radius:0; padding:14px;` `pre code` is mono, transparent, block.
-- `blockquote`: `border-left:2px solid #8A5BB0; padding-left:14px; color:#B8B0A0; font-style:italic;`
-- `h1–h4`: `font-family:Cinzel; letter-spacing:.04em; color:#ECE6D8;`
-- `hr`: `border-color:#2E2833;`
-- Tables: header bg `#18151D`, cell borders 1px `#2E2833`, square.
+## Design tokens (unchanged — already in `app/globals.css`)
+Use the existing CSS variables / Tailwind tokens. Key ones referenced above:
+- Surfaces: `--void #08070A`, `--ground #100E14`, `--paneldk #0C0A10`, `--panel #18151D`, `--panel2 #1F1B25`
+- Lines: `--hair #2E2833`, `--hairlit #463C4E`
+- Ink: `--marble #ECE6D8`, `--parch #B8B0A0`, `--parchdk #D6CFC0`, `--muted #847C70`, `--mutedlo #6F6760`, `--agentbody #E3DDD0`
+- Accent: `--gold #C9A24B`, `--goldbri #E3C06A`, `--goldink #100E14`, `--goldsoft rgba(201,162,75,.10)`
+- Gems: `--lapis #4F74E0`, `--malach #3A9D6E`, `--carnelian #C0504A`, `--porphyry #8A5BB0`, `--porphlbl #A87FD0`
+- (Marble theme provides the same variables with inverted values — see `[data-theme="marble"]` in `globals.css`.)
+- Fonts: Cinzel (display), IBM Plex Mono (UI/terminal), Spectral (reading/agent).
+- Corners are **sharp** everywhere (existing global `border-radius:0` rule).
 
-### 4. Composer (`components/Composer.tsx`)
-- Centered, `max-width:760px`. The textarea sits inside a **terminal field**:
-  1px `hairlit` border on `void` (#08070A) bg, with a `gold ❯` prompt glyph at
-  the left (align-items flex-start). Textarea is transparent, mono 13.5px,
-  placeholder `summon the agent…` in `mutedlo`. Focus raises the gold
-  border+glow described in tokens.
-- **Send button:** gold fill, `#100E14` text, label `SEND`, 11px, `0.18em`
-  tracking, sharp, with the gold glow shadow. Hover `goldbri`.
-- **Stop button** (while streaming): ghost — transparent, 1px `hair` border,
-  `parch` text, label `STOP`; hover border+text `carnelian`.
+## Icons
+The prototype draws inline SVGs; in the app use the existing icon set (lucide-react recommended):
+- Attach → `Plus`
+- Dictation/TTS → `Mic`
+- Stop (while streaming) → `Square` (filled)
+- Sidebar collapse / reveal → `PanelLeftClose` / `PanelLeft`
+All render at currentColor, ~15px stroke icons in 30–34px hit targets.
 
-### 5. Settings (`app/settings/page.tsx`)
-- Command bar `NIPHATES // SETTINGS` + `← RETURN`.
-- Title `Providers` in Cinzel 600 32px with a Cinzel `§` marker at left.
-- Provider rows in a 1px-`hair` bordered group (rows separated by 1px `hair`,
-  bg `ground`): malachite glow-square dot + name (`marble`) + a square `type`
-  tag (1px `hair`, mono 10px `muted`); `baseUrl` line in `muted`, model list in
-  `gold`. Action buttons are square ghost mono labels `TEST` (hover malachite) /
-  `EDIT` (hover lapis) / `DELETE` (carnelian). `❯ ADD PROVIDER` is the ghost-gold
-  button. Keep the existing edit form — restyle inputs as terminal fields
-  (square, `void` bg, `hair` border, gold focus), labels mono uppercase `muted`.
+## Files to edit
+- `app/page.tsx` — workspace shell, `activeChamber` + `sidebarOpen` state, top bar (provider right + gear), main-pane chamber switch.
+- `components/Sidebar.tsx` — chamber nav, Dialogue-scoped list, subsection placeholder, collapse icon, spacing cleanup, theme toggle removed.
+- `components/Composer.tsx` — stacked redesign, remove SEND, borderless buttons, in-composer model selector, attach + mic, square stop.
+- `components/MessageList.tsx` — type scaling + user-bubble 64px inset + tightened column.
+- `app/settings/page.tsx` — Appearance section (theme toggle) above Providers; RETURN → workspace.
+- `app/hermes/page.tsx` — move Connection/Model/System body into a `CommandView` rendered in-pane; retire the standalone page chrome.
+- `app/globals.css` — no token changes expected; verify no leftover sidebar-footer / header-border styles.
 
-### 6. Hermes Control (`app/hermes/page.tsx`)
-- Command bar `NIPHATES // CONTROL` + `← RETURN`.
-- Title `Hermes Control` Cinzel 600 32px with `⚡`. Intro blurb in Spectral 16px
-  `parch`.
-- Three sections as 1px-`hair` cards on `paneldk`, each with a mono kicker
-  `⌁ CONNECTION` / `⌁ MODEL` / `⌁ SYSTEM` (10.5px, `0.22em`, `muted`).
-  Field labels mono uppercase `muted`; inputs are terminal fields. Primary
-  `SAVE & TEST` is the gold glow button; secondary actions (`SET ACTIVE`,
-  `REFRESH`) are square ghost mono (hover malachite/lapis). The status line uses
-  a gold/malachite glow-square dot. The system `<pre>` is a `void` block, 1px
-  `hair`, mono 12px `parch`.
-
----
-
-## Interactions & Behavior
-Unchanged from the current app — preserve all of it:
-- New chat, select, archive/unarchive, delete (+ confirm), row `⋯` menu with
-  outside-click/Escape close.
-- Provider/model selects act as a **live switch** on the active conversation.
-- Streaming chat via `/api/chat` ndjson; Stop aborts; debounced/flushed history.
-- Auto-scroll to newest message on update.
-- Only **new visual states** to add: gold-glow pulse for "summoning…", gold
-  focus-glow on terminal fields, hover color shifts noted above.
-
-## State Management
-No changes. Same `Conversation[]` / provider state, same stores, same
-`lib/*`. This is a presentation reskin.
-
-## Naming / copy
-The product is being renamed **Niphates** (the chat agent persona is also
-"NIPHATES"; the user is "OPERATOR"). Update: `app/layout.tsx` metadata title,
-the sidebar wordmark, the manifest `name`/`short_name`, and chat labels. Keep
-"Hermes Agent" as the **provider** name (it's the upstream agent/provider), and
-keep the `/hermes` Control route + "Hermes Control" heading — Hermes is the
-backend; Niphates is the client. Confirm with the owner if unsure.
-
-## Files in the real repo to change
-- `app/layout.tsx` — load fonts; update metadata title.
-- `app/globals.css` — base font/bg vars; `.msg-content` markdown restyle; selection; remove rounded assumptions.
-- `tailwind.config.ts` — new `colors` + `fontFamily`.
-- `components/Sidebar.tsx` — brand, ghost new-chat, left-rule rows, footer.
-- `components/MessageList.tsx` — **dialogue transcript** + empty state + summoning state.
-- `components/Composer.tsx` — terminal field + gold SEND / ghost STOP.
-- `app/page.tsx` — header select chips with status dot.
-- `app/settings/page.tsx` — command bar, Cinzel title, terminal forms.
-- `app/hermes/page.tsx` — command bar, Cinzel title, `⌁` section kickers.
-- `public/manifest.webmanifest` — name/short_name/theme color (`#100E14`).
-- Do **not** modify `lib/**`, `app/api/**`, stores, connectors, schemas.
-
-## Screenshots (in this bundle, `screenshots/`)
-
-Annotated captures of every screen in both themes — caption banner names the
-screen, theme, and key callouts:
-
-| File | Screen | Theme |
-|------|--------|-------|
-| `1-chat-obsidian.png` | Chat / Dialogue | Obsidian |
-| `2-control-obsidian.png` | Hermes Control | Obsidian |
-| `3-settings-obsidian.png` | Settings / Providers | Obsidian |
-| `4-chat-marble.png` | Chat / Dialogue | Marble |
-| `5-control-marble.png` | Hermes Control | Marble |
-| `6-settings-marble.png` | Settings / Providers | Marble |
-
-## Design reference files (in this bundle)
-- `prototypes/Niphates Visual Language.dc.html`
-- `prototypes/Niphates.dc.html`
-Open them in a browser to see the live target (fonts load from Google Fonts).
+## Screenshots (current prototype state)
+- `1-dialogue-obsidian.png` — Dialogue chamber, obsidian theme (default landing)
+- `2-command-obsidian.png` — Command chamber (former Control), in-pane
+- `3-chamber-placeholder-obsidian.png` — Library chamber placeholder ("not yet built")
+- `4-settings-obsidian.png` — Settings with new Appearance section above Providers
+- `5-settings-marble.png` — Settings, marble theme
+- `6-dialogue-marble.png` — Dialogue chamber, marble theme
