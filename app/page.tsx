@@ -88,6 +88,50 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen]);
 
+  // Touch gestures (mobile drawer only): edge-swipe right opens the sidebar,
+  // swipe left closes it. Flick + threshold — the drawer animates via its own
+  // CSS transition. Passive listeners so we never block scrolling.
+  useEffect(() => {
+    const EDGE = 24; // px from the left edge that counts as an "open" start
+    const THRESHOLD = 60; // min horizontal travel to count as a swipe
+    let startX = 0;
+    let startY = 0;
+    let fromEdge = false;
+    let tracking = false;
+
+    const onStart = (e: TouchEvent) => {
+      // Only acts where the sidebar is an overlay drawer (below md).
+      if (!window.matchMedia("(max-width: 767px)").matches) {
+        tracking = false;
+        return;
+      }
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      fromEdge = startX <= EDGE;
+      tracking = sidebarOpen || fromEdge;
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      // Require a horizontal-dominant swipe so vertical scrolls don't trigger it.
+      if (Math.abs(dx) < THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+      if (dx > 0 && !sidebarOpen && fromEdge) setSidebarOpen(true);
+      else if (dx < 0 && sidebarOpen) setSidebarOpen(false);
+    };
+
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, [sidebarOpen]);
+
   const active = useMemo(
     () => conversations.find((c) => c.id === activeId) || null,
     [conversations, activeId],
