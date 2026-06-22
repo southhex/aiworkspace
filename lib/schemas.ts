@@ -33,7 +33,13 @@ export const providerSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
 });
 
-export const hermesAuthModeSchema = z.enum(["auto", "none", "bearer", "cookie"]);
+export const hermesAuthModeSchema = z.enum([
+  "auto",
+  "none",
+  "bearer",
+  "cookie",
+  "session",
+]);
 
 /** PUT body for the Hermes connection — partial; merged over current config. */
 export const hermesConnectionInputSchema = z.object({
