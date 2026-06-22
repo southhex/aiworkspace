@@ -1,5 +1,5 @@
-// Probe the Hermes management API to confirm reachability + auth.
-// Uses /api/model/info as a lightweight, always-present read endpoint.
+// Two-probe Hermes connection test: /api/model/info (unauthenticated, reachability)
+// then /api/model/options (authenticated) to confirm the token separately.
 
 import {
   getHermesConnection,
@@ -23,15 +23,25 @@ export async function POST() {
       return Response.json({
         ok: false,
         reachable: false,
+        loopback,
         status: infoRes.status,
         error: `HTTP ${infoRes.status}: ${detail.slice(0, 200)}`,
       });
     }
     const info = await infoRes.json().catch(() => ({}));
 
-    // /model/options requires a valid session token — use it to confirm auth.
-    const optRes = await hermesFetch("/api/model/options", { timeoutMs: 8000 });
-    const authenticated = optRes.status !== 401 && optRes.status !== 403;
+    // Reachability is proven. Probe an authenticated endpoint to confirm the
+    // token. A separate try/catch so an auth-probe network error doesn't get
+    // reported as unreachable. `authenticated` is true only on a 2xx — a 401/403
+    // means the token is wrong; any other non-2xx (5xx, etc.) is not a
+    // confirmed auth success, so we report false rather than guessing.
+    let authenticated = false;
+    try {
+      const optRes = await hermesFetch("/api/model/options", { timeoutMs: 8000 });
+      authenticated = optRes.ok;
+    } catch {
+      authenticated = false;
+    }
 
     return Response.json({
       ok: true,
@@ -42,6 +52,6 @@ export async function POST() {
       provider: info?.provider ?? null,
     });
   } catch (err) {
-    return Response.json({ ok: false, reachable: false, error: hermesError(err) });
+    return Response.json({ ok: false, reachable: false, loopback, error: hermesError(err) });
   }
 }
