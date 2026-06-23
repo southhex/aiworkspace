@@ -1,9 +1,11 @@
 // Streaming chat proxy. The browser POSTs a conversation here; we look up the
 // provider server-side (so the API key never reaches the client), call the
 // upstream, and stream back newline-delimited JSON events:
-//   {"type":"delta","text":"..."}   incremental assistant text
-//   {"type":"error","error":"..."}  something went wrong
-//   {"type":"done"}                 stream finished
+//   {"type":"delta","text":"..."}     incremental assistant text
+//   {"type":"reasoning","text":"..."} agent reasoning/thinking preview
+//   {"type":"tool","tool":"...","status":"started"|"completed",...}  tool activity
+//   {"type":"error","error":"..."}    something went wrong
+//   {"type":"done"}                   stream finished
 
 import { NextRequest } from "next/server";
 import { getProvider } from "@/lib/providers";
@@ -28,7 +30,8 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const { providerId, model, messages, temperature, maxTokens } = parsed.data;
+  const { providerId, model, messages, temperature, maxTokens, conversationId } =
+    parsed.data;
 
   const provider = await getProvider(providerId);
   if (!provider) {
@@ -44,14 +47,26 @@ export async function POST(req: NextRequest) {
       const send = (obj: unknown) =>
         controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
-        for await (const delta of streamChat(provider, {
+        for await (const ev of streamChat(provider, {
           model,
           messages,
           temperature,
           maxTokens,
+          conversationId,
           signal: req.signal,
         })) {
-          send({ type: "delta", text: delta });
+          if (ev.kind === "text") send({ type: "delta", text: ev.text });
+          else if (ev.kind === "reasoning")
+            send({ type: "reasoning", text: ev.text });
+          else if (ev.kind === "tool")
+            send({
+              type: "tool",
+              tool: ev.tool,
+              status: ev.status,
+              preview: ev.preview,
+              durationMs: ev.durationMs,
+              error: ev.error,
+            });
         }
         send({ type: "done" });
       } catch (err) {

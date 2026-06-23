@@ -52,10 +52,49 @@ export interface Provider {
 
 export type ChatRole = "system" | "user" | "assistant";
 
+/**
+ * A single tool invocation surfaced by an agent while it works. Hermes' Runs
+ * API emits `tool.started` then `tool.completed`; we collapse the pair into one
+ * record whose `status` advances from "started" to "completed".
+ */
+export interface ToolEvent {
+  tool: string;
+  status: "started" | "completed";
+  /** Short preview of the tool input (e.g. the code/command being run). */
+  preview?: string;
+  /** Wall-clock duration once completed. */
+  durationMs?: number;
+  /** True if the tool finished with an error. */
+  error?: boolean;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  /** Assistant-only: reasoning/thinking preview streamed alongside the answer. */
+  reasoning?: string;
+  /** Assistant-only: tool activity for this turn (Hermes agent runs). */
+  toolCalls?: ToolEvent[];
 }
+
+/**
+ * Normalized streaming event yielded by every connector. The chat route maps
+ * these onto the browser-facing ndjson protocol; the UI renders text, a
+ * reasoning block, and tool cards from them. A new wire format only has to
+ * produce these — see `lib/connectors.ts`.
+ */
+export type StreamEvent =
+  | { kind: "text"; text: string }
+  | { kind: "reasoning"; text: string }
+  | {
+      kind: "tool";
+      tool: string;
+      status: "started" | "completed";
+      preview?: string;
+      durationMs?: number;
+      error?: boolean;
+    }
+  | { kind: "done" };
 
 export interface ChatRequest {
   providerId: string;

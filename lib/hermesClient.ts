@@ -114,6 +114,13 @@ export const hermesApi = {
   // Profiles (the composer picks which profile answers a Gateway chat)
   profiles: () => hx<ProfilesResponse>("/profiles"),
   activeProfile: () => hx<ActiveProfileResponse>("/profiles/active"),
+  // Switch a specific profile's underlying LLM (global server-side state).
+  // `PUT /api/profiles/{name}/model` requires both provider and model.
+  setProfileModel: (name: string, model: string, provider: string) =>
+    hx<HermesProfile>(`/profiles/${encodeURIComponent(name)}/model`, {
+      method: "PUT",
+      body: JSON.stringify({ provider, model }),
+    }),
 };
 
 export interface HermesProfile {
@@ -140,6 +147,24 @@ export interface PublicHermesConnection {
   isLoopback: boolean;
   chatBaseUrl?: string;
   hasChatKey: boolean;
+  /** Curated composer model ids. Empty/undefined = show all. */
+  allowedModels?: string[];
+}
+
+/** Persist the composer model allowlist (Command → Models filter). */
+export async function saveAllowedModels(
+  allowedModels: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch("/api/hermes/connection", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allowedModels }),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    return { ok: false, error: d.error || `HTTP ${res.status}` };
+  }
+  return { ok: true };
 }
 
 export async function getConnection(): Promise<PublicHermesConnection | null> {

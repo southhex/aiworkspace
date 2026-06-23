@@ -8,10 +8,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HermesModelCatalog } from "@/components/HermesModelCatalog";
+import { HermesModelFilter } from "@/components/HermesModelFilter";
 import { CHAMBER_SUBSECTIONS } from "@/components/chambers";
 import {
   getConnection,
   testConnection,
+  saveAllowedModels,
   hermesApi,
   type PublicHermesConnection,
   type ModelOptions,
@@ -26,6 +28,7 @@ export function CommandView({ section }: { section: string }) {
   const [currentProvider, setCurrentProvider] = useState<string | null>(null);
   const [options, setOptions] = useState<ModelOptions | null>(null);
   const [busyModel, setBusyModel] = useState<string | null>(null);
+  const [savingFilter, setSavingFilter] = useState(false);
 
   const refreshLive = async () => {
     const [info, opts] = await Promise.all([
@@ -72,6 +75,22 @@ export function CommandView({ section }: { section: string }) {
     if (res.ok) {
       setStatus(`✅ Active model is now ${model}`);
       await refreshLive();
+    } else {
+      setStatus(`❌ ${res.error}`);
+    }
+  };
+
+  const onSaveFilter = async (models: string[]) => {
+    setSavingFilter(true);
+    const res = await saveAllowedModels(models);
+    setSavingFilter(false);
+    if (res.ok) {
+      setConn((c) => (c ? { ...c, allowedModels: models } : c));
+      setStatus(
+        models.length
+          ? `✅ Composer picker limited to ${models.length} model(s).`
+          : "✅ Composer picker shows all models.",
+      );
     } else {
       setStatus(`❌ ${res.error}`);
     }
@@ -135,6 +154,23 @@ export function CommandView({ section }: { section: string }) {
           >
             REFRESH
           </button>
+
+          <div className="mt-6 border-t border-hair pt-4">
+            <div className="mb-3 font-mono text-[10.5px] uppercase tracking-[0.22em] text-muted">
+              ⌁ COMPOSER FILTER
+            </div>
+            <p className="mb-3 font-mono text-[11px] text-mutedlo">
+              Choose which models appear in the composer&apos;s quick switcher.
+              Unchecked models are hidden there (the full catalog above is
+              unaffected). With none selected, all models show.
+            </p>
+            <HermesModelFilter
+              options={options}
+              allowed={conn?.allowedModels}
+              saving={savingFilter}
+              onSave={onSaveFilter}
+            />
+          </div>
         </section>
       ) : (
         <div className="border border-hair bg-paneldk p-8 text-center font-mono text-[12px] text-mutedlo">

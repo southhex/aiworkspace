@@ -50,6 +50,8 @@ export async function PUT(req: NextRequest) {
       incoming.chatKey === "" || incoming.chatKey === undefined
         ? current.chatKey
         : incoming.chatKey,
+    // Undefined keeps the existing list; an explicit array replaces it.
+    allowedModels: incoming.allowedModels ?? current.allowedModels,
   };
 
   if (!next.adminBaseUrl) {

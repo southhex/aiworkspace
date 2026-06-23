@@ -1,10 +1,14 @@
 // Client helper: POST a chat request and yield assistant text deltas as they
 // arrive. Parses the NDJSON event stream produced by /api/chat.
 
-import type { ChatMessage } from "./types";
+import type { ChatMessage, ToolEvent } from "./types";
 
 export interface StreamHandlers {
   onDelta: (text: string) => void;
+  /** Hermes agent reasoning/thinking preview chunk. */
+  onReasoning?: (text: string) => void;
+  /** A tool.started / tool.completed event for the current turn. */
+  onTool?: (event: ToolEvent) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
 }
@@ -15,6 +19,8 @@ export async function streamChatRequest(
     model: string;
     messages: ChatMessage[];
     temperature?: number;
+    /** Conversation id → Hermes Runs session_id for server-side context. */
+    conversationId?: string;
   },
   handlers: StreamHandlers,
   signal?: AbortSignal,
@@ -54,6 +60,15 @@ export async function streamChatRequest(
       try {
         const evt = JSON.parse(line);
         if (evt.type === "delta") handlers.onDelta(evt.text);
+        else if (evt.type === "reasoning") handlers.onReasoning?.(evt.text);
+        else if (evt.type === "tool")
+          handlers.onTool?.({
+            tool: evt.tool,
+            status: evt.status,
+            preview: evt.preview,
+            durationMs: evt.durationMs,
+            error: evt.error,
+          });
         else if (evt.type === "error") handlers.onError?.(evt.error);
         else if (evt.type === "done") handlers.onDone?.();
       } catch {

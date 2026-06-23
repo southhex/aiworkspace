@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import { Plus, Mic, Square } from "lucide-react";
 import { Select } from "@/components/Select";
+import { ComposerModelSwitch } from "@/components/ComposerModelSwitch";
 
 export function Composer({
   disabled,
@@ -13,6 +14,7 @@ export function Composer({
   models,
   model,
   onModelChange,
+  gatewayProfile,
 }: {
   disabled: boolean;
   streaming: boolean;
@@ -21,6 +23,10 @@ export function Composer({
   models: string[];
   model: string;
   onModelChange: (m: string) => void;
+  /** When set (Gateway provider active), shows the inline model switcher for
+   *  this profile. The composer `model` above is the *profile*; this switches
+   *  that profile's underlying LLM. */
+  gatewayProfile?: string;
 }) {
   const [value, setValue] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -48,13 +54,16 @@ export function Composer({
 
   return (
     <div className="pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))] pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-      <div className="mx-auto w-full max-w-[720px]">
+      {/* zoom 0.9 — scale the whole composer down ~10% (reflows cleanly on WebKit) */}
+      <div className="mx-auto w-full max-w-[720px]" style={{ zoom: 0.9 }}>
         {/* Outer box — term-field gives the 1px hairlit border + gold focus glow */}
         <div className="term-field flex flex-col gap-[11px] px-[14px] py-3">
-          {/* Row 1 — input */}
+          {/* Row 1 — input. items-start keeps the prompt on the first line when the
+              textarea grows; the leading-[20px] on the caret matches the textarea's
+              line box so they share a baseline. */}
           <div className="flex items-start gap-2">
             <span
-              className="mt-0.5 select-none font-mono text-[16px] text-gold md:text-[14px]"
+              className="select-none font-mono text-[16px] leading-[20px] text-gold md:text-[14px]"
               aria-hidden="true"
             >
               ❯
@@ -64,7 +73,7 @@ export function Composer({
               value={value}
               disabled={disabled}
               rows={1}
-              style={{ minHeight: 42 }}
+              style={{ minHeight: 20 }}
               placeholder={
                 disabled
                   ? "Add a provider in Settings first…"
@@ -93,16 +102,22 @@ export function Composer({
 
             <div className="flex-1" />
 
-            {/* Model selector chip — panel bg, no border, no status dot */}
-            <div className="flex items-center bg-panel px-2.5 py-1">
-              <Select
-                value={model}
-                onChange={onModelChange}
-                options={models.map((m) => ({ value: m, label: m }))}
-                disabled={models.length === 0}
-                valueClassName="text-gold"
-              />
-            </div>
+            {gatewayProfile ? (
+              /* Gateway: the model switcher IS the picker — it swaps the
+                 (default) profile's underlying LLM. No separate profile chip. */
+              <ComposerModelSwitch profile={gatewayProfile} />
+            ) : (
+              /* Direct providers: pick from the curated model list. */
+              <div className="flex items-center bg-panel px-2.5 py-1">
+                <Select
+                  value={model}
+                  onChange={onModelChange}
+                  options={models.map((m) => ({ value: m, label: m }))}
+                  disabled={models.length === 0}
+                  valueClassName="text-gold"
+                />
+              </div>
+            )}
 
             {streaming ? (
               <button

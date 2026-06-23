@@ -44,7 +44,7 @@ export function HermesModelCatalog({
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="search models…"
-        className="hxinp mb-3"
+        className="mb-3 w-full border border-hairlit bg-void px-2.5 py-1.5 font-mono text-[12px] text-marble outline-none placeholder:text-mutedlo focus:border-gold"
       />
       <div className="max-h-[420px] space-y-4 overflow-y-auto">
         {groups.map((u) => {

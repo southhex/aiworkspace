@@ -10,6 +10,7 @@ import {
   type ChamberId,
 } from "@/components/chambers";
 import type { Conversation } from "@/lib/types";
+import { Spinner } from "@/components/Spinner";
 
 export function Sidebar({
   conversations,
@@ -60,6 +61,8 @@ export function Sidebar({
         />
       )}
       <aside
+        // zoom 0.9 — scale the whole sidebar (width + type) down ~10%
+        style={{ zoom: 0.9 }}
         className={`fixed inset-y-0 left-0 z-30 flex w-[264px] flex-col border-r border-hair bg-paneldk pl-[env(safe-area-inset-left)] transition-all md:static md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } ${
@@ -363,14 +366,12 @@ function ChatRow({
         {c.title}
       </button>
       <span className="flex shrink-0 items-center gap-1">
-        {showIndicator && (
-          <span
-            className={`status-dot status-dot-gold ${
-              summoning ? "glow-pulse" : ""
-            }`}
-            title={summoning ? "summoning" : "unseen reply"}
-          />
-        )}
+        {showIndicator &&
+          (summoning ? (
+            <Spinner className="text-[12px] text-gold" title="summoning" />
+          ) : (
+            <span className="status-dot status-dot-gold" title="unseen reply" />
+          ))}
         <button
           ref={btnRef}
           onClick={openMenu}

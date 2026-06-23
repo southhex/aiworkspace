@@ -5,9 +5,19 @@
 
 import { z } from "zod";
 
+export const toolEventSchema = z.object({
+  tool: z.string(),
+  status: z.enum(["started", "completed"]),
+  preview: z.string().optional(),
+  durationMs: z.number().optional(),
+  error: z.boolean().optional(),
+});
+
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
   content: z.string(),
+  reasoning: z.string().optional(),
+  toolCalls: z.array(toolEventSchema).optional(),
 });
 
 export const chatRequestSchema = z.object({
@@ -16,6 +26,8 @@ export const chatRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().positive().max(200_000).optional(),
+  /** Used as the Hermes Runs session_id for server-side multi-turn context. */
+  conversationId: z.string().optional(),
 });
 
 export const providerTypeSchema = z.enum(["openai", "anthropic"]);
@@ -53,6 +65,8 @@ export const hermesConnectionInputSchema = z.object({
   // (like a blank token) means "keep the stored secret".
   chatBaseUrl: z.string().url().optional(),
   chatKey: z.string().optional(),
+  // Curated composer model ids. Replaces (not merges) the stored list.
+  allowedModels: z.array(z.string()).optional(),
 });
 
 export const conversationSchema = z.object({

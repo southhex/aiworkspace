@@ -28,6 +28,11 @@ export interface HermesConnection {
   chatBaseUrl?: string;
   /** Secret inference API key (Bearer). Stored server-side, never returned raw. */
   chatKey?: string;
+  /**
+   * Curated subset of gateway model ids shown in the composer model picker.
+   * Empty/undefined means "no filter — show all". Set from Command → Models.
+   */
+  allowedModels?: string[];
 }
 
 /** Public (redacted) view safe to send to the browser. */
@@ -38,6 +43,8 @@ export interface PublicHermesConnection {
   isLoopback: boolean;
   chatBaseUrl?: string;
   hasChatKey: boolean;
+  /** Curated composer model ids (not a secret). Empty/undefined = all. */
+  allowedModels?: string[];
 }
 
 export function isLoopbackUrl(urlStr: string): boolean {
@@ -76,5 +83,6 @@ export function toPublicConnection(c: HermesConnection): PublicHermesConnection 
     isLoopback: isLoopbackUrl(c.adminBaseUrl),
     chatBaseUrl: c.chatBaseUrl,
     hasChatKey: Boolean(c.chatKey),
+    allowedModels: c.allowedModels,
   };
 }

@@ -12,7 +12,6 @@ import { ChamberPlaceholder } from "@/components/ChamberPlaceholder";
 import { Select } from "@/components/Select";
 import { type ChamberId } from "@/components/chambers";
 import { streamChatRequest } from "@/lib/client";
-import { hermesApi } from "@/lib/hermesClient";
 import {
   loadConversations,
   saveConversations,
@@ -20,7 +19,7 @@ import {
   newConversation,
   titleFrom,
 } from "@/lib/storage";
-import type { Conversation, PublicProvider } from "@/lib/types";
+import type { ChatMessage, Conversation, PublicProvider } from "@/lib/types";
 
 export default function Home() {
   const [providers, setProviders] = useState<PublicProvider[]>([]);
@@ -35,10 +34,6 @@ export default function Home() {
   // sidebar. Only Command has subsections today; defaults to its built tab.
   const [subsection, setSubsection] = useState<string>("models");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  // For the Hermes (Gateway) provider the composer picks a *profile*, not a raw
-  // model — these come from the management plane, not the /v1 catalog.
-  const [gatewayProfiles, setGatewayProfiles] = useState<string[]>([]);
-  const [activeProfile, setActiveProfile] = useState<string>("");
   const streaming = streamingId !== null;
   const activeIdRef = useRef<string | null>(activeId);
   const abortRef = useRef<AbortController | null>(null);
@@ -151,40 +146,15 @@ export default function Home() {
 
   const currentProvider = providers.find((p) => p.id === providerId);
   const isGateway = currentProvider?.kind === "gateway";
-  // The composer's model list: Hermes profiles for the Gateway, the curated
-  // model set for direct providers.
-  const composerModels = isGateway
-    ? gatewayProfiles
-    : currentProvider?.models ?? [];
+  // Direct providers pick from their curated model list; the Gateway uses the
+  // composer's inline model switcher instead (see below).
+  const composerModels = currentProvider?.models ?? [];
 
-  // Load Hermes profiles for the Gateway composer selector. No-op (empty) when
-  // the Gateway isn't connected.
+  // The Gateway always chats as the `default` profile for now — the composer
+  // switches that profile's underlying model, not the profile itself.
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([hermesApi.profiles(), hermesApi.activeProfile()]).then(
-      ([pr, ac]) => {
-        if (cancelled) return;
-        if (pr.ok && pr.data?.profiles) {
-          setGatewayProfiles(pr.data.profiles.map((p) => p.name));
-        }
-        if (ac.ok && ac.data) setActiveProfile(ac.data.active || ac.data.current || "");
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Default the Gateway selection to the active profile once profiles load (and
-  // nothing is selected yet — e.g. on fresh load with no active conversation).
-  useEffect(() => {
-    if (!isGateway || model || gatewayProfiles.length === 0) return;
-    const next =
-      activeProfile && gatewayProfiles.includes(activeProfile)
-        ? activeProfile
-        : gatewayProfiles[0];
-    setModel(next);
-  }, [isGateway, model, gatewayProfiles, activeProfile]);
+    if (isGateway && model !== "default") setModel("default");
+  }, [isGateway, model]);
 
   useEffect(() => {
     if (active) {
@@ -256,11 +226,7 @@ export default function Home() {
     setProviderId(id);
     const p = providers.find((x) => x.id === id);
     const m =
-      p?.kind === "gateway"
-        ? (activeProfile && gatewayProfiles.includes(activeProfile)
-            ? activeProfile
-            : gatewayProfiles[0]) || ""
-        : p?.defaultModel || p?.models[0] || "";
+      p?.kind === "gateway" ? "default" : p?.defaultModel || p?.models[0] || "";
     setModel(m);
     applyModelToActive(id, m);
   };
@@ -301,23 +267,46 @@ export default function Home() {
 
     const messagesForApi = withUser.messages.slice(0, -1);
 
+    // Update the in-flight assistant message (always the last one) of convo `id`.
+    const updateAssistant = (mutate: (m: ChatMessage) => ChatMessage) => {
+      setConversations((prev) => {
+        const next = prev.map((c) => {
+          if (c.id !== id) return c;
+          const msgs = [...c.messages];
+          msgs[msgs.length - 1] = mutate(msgs[msgs.length - 1]);
+          return { ...c, messages: msgs, updatedAt: Date.now() };
+        });
+        saveConversations(next);
+        return next;
+      });
+    };
+
     await streamChatRequest(
-      { providerId, model, messages: messagesForApi },
+      { providerId, model, messages: messagesForApi, conversationId: id },
       {
         onDelta: (delta) => {
-          setConversations((prev) => {
-            const next = prev.map((c) => {
-              if (c.id !== id) return c;
-              const msgs = [...c.messages];
-              const last = msgs[msgs.length - 1];
-              msgs[msgs.length - 1] = {
-                ...last,
-                content: last.content + delta,
-              };
-              return { ...c, messages: msgs, updatedAt: Date.now() };
-            });
-            saveConversations(next);
-            return next;
+          updateAssistant((last) => ({ ...last, content: last.content + delta }));
+        },
+        onReasoning: (text) => {
+          updateAssistant((last) => ({
+            ...last,
+            reasoning: (last.reasoning ?? "") + text,
+          }));
+        },
+        onTool: (event) => {
+          updateAssistant((last) => {
+            const calls = [...(last.toolCalls ?? [])];
+            if (event.status === "completed") {
+              // Settle the most recent matching open call; else append.
+              for (let i = calls.length - 1; i >= 0; i--) {
+                if (calls[i].tool === event.tool && calls[i].status === "started") {
+                  calls[i] = { ...calls[i], ...event };
+                  return { ...last, toolCalls: calls };
+                }
+              }
+            }
+            calls.push(event);
+            return { ...last, toolCalls: calls };
           });
         },
         onError: (message) => {
@@ -479,6 +468,7 @@ export default function Home() {
             models={composerModels}
             model={model}
             onModelChange={onModelChange}
+            gatewayProfile={isGateway ? "default" : undefined}
           />
         )}
       </main>

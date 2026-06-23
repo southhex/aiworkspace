@@ -4,8 +4,9 @@
 // SSE parsing lives in ./sse (pure + testable); this file owns the wire calls.
 
 import "server-only";
-import type { ChatMessage, Provider, ProviderType } from "./types";
+import type { ChatMessage, Provider, ProviderType, StreamEvent } from "./types";
 import { sseLines, extractOpenAIDelta, extractAnthropicDelta } from "./sse";
+import { mapRunsEvent } from "./runsEvents";
 
 export interface StreamOptions {
   model: string;
@@ -13,19 +14,24 @@ export interface StreamOptions {
   temperature?: number;
   /** Max output tokens; falls back to the provider default then a sane cap. */
   maxTokens?: number;
+  /**
+   * The conversation id, used as the Hermes Runs `session_id` so the agent
+   * keeps server-side context across turns. Ignored by stateless connectors.
+   */
+  conversationId?: string;
   signal?: AbortSignal;
 }
 
 type Connector = (
   provider: Provider,
   opts: StreamOptions,
-) => AsyncGenerator<string>;
+) => AsyncGenerator<StreamEvent>;
 
-/** OpenAI-compatible: Hermes, Ollama, OpenRouter, OpenAI, KiloCode, etc. */
+/** OpenAI-compatible: Ollama, OpenRouter, OpenAI, KiloCode, etc. */
 async function* openaiStream(
   provider: Provider,
   opts: StreamOptions,
-): AsyncGenerator<string> {
+): AsyncGenerator<StreamEvent> {
   const url = `${provider.baseUrl.replace(/\/$/, "")}/chat/completions`;
   const maxTokens = opts.maxTokens ?? provider.maxTokens;
   const res = await fetch(url, {
@@ -56,7 +62,77 @@ async function* openaiStream(
     if (payload === "[DONE]") return;
     if (!payload) continue;
     const delta = extractOpenAIDelta(payload);
-    if (delta) yield delta;
+    if (delta) yield { kind: "text", text: delta };
+  }
+}
+
+/**
+ * Hermes Agent via the gateway Runs API. Unlike /chat/completions (which only
+ * returns the final text), the Runs API surfaces the agent loop: reasoning and
+ * tool calls. Flow: POST /runs → {run_id}; GET /runs/{id}/events (SSE) →
+ * normalize each event; on abort, best-effort POST /runs/{id}/stop.
+ */
+async function* hermesRunsStream(
+  provider: Provider,
+  opts: StreamOptions,
+): AsyncGenerator<StreamEvent> {
+  const base = provider.baseUrl.replace(/\/$/, ""); // e.g. http://host:8642/v1
+  const auth: Record<string, string> = provider.apiKey
+    ? { Authorization: `Bearer ${provider.apiKey}` }
+    : {};
+
+  // With server-side sessions, only the latest user turn is the run input;
+  // Hermes reconstructs prior context from session_id.
+  const lastUser = [...opts.messages].reverse().find((m) => m.role === "user");
+
+  const startRes = await fetch(`${base}/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...auth },
+    body: JSON.stringify({
+      input: lastUser?.content ?? "",
+      source: "niphates",
+      ...(opts.conversationId ? { session_id: opts.conversationId } : {}),
+      // For the Gateway provider the selected "model" is a Hermes profile name.
+      ...(opts.model ? { profile: opts.model } : {}),
+    }),
+    signal: opts.signal,
+  });
+  if (!startRes.ok) {
+    const detail = await startRes.text().catch(() => "");
+    throw new Error(
+      `Hermes run failed (${startRes.status}): ${detail.slice(0, 500)}`,
+    );
+  }
+  const { run_id: runId } = (await startRes.json()) as { run_id?: string };
+  if (!runId) throw new Error("Hermes run did not return a run_id");
+
+  const evRes = await fetch(`${base}/runs/${runId}/events`, {
+    headers: auth,
+    signal: opts.signal,
+  });
+  if (!evRes.ok || !evRes.body) {
+    const detail = await evRes.text().catch(() => "");
+    throw new Error(
+      `Hermes events stream failed (${evRes.status}): ${detail.slice(0, 500)}`,
+    );
+  }
+
+  try {
+    for await (const payload of sseLines(evRes.body)) {
+      const ev = mapRunsEvent(payload);
+      if (!ev) continue;
+      if (ev.kind === "done") return;
+      yield ev;
+    }
+  } finally {
+    // The events SSE has no resume cursor; if the client aborted, tell Hermes to
+    // stop the run server-side so it isn't left working in the background.
+    if (opts.signal?.aborted) {
+      fetch(`${base}/runs/${runId}/stop`, {
+        method: "POST",
+        headers: auth,
+      }).catch(() => {});
+    }
   }
 }
 
@@ -64,7 +140,7 @@ async function* openaiStream(
 async function* anthropicStream(
   provider: Provider,
   opts: StreamOptions,
-): AsyncGenerator<string> {
+): AsyncGenerator<StreamEvent> {
   const url = `${provider.baseUrl.replace(/\/$/, "")}/v1/messages`;
   // Anthropic wants the system prompt as a top-level field, not a message.
   const system = opts.messages
@@ -105,7 +181,7 @@ async function* anthropicStream(
   for await (const payload of sseLines(res.body)) {
     if (!payload) continue;
     const delta = extractAnthropicDelta(payload);
-    if (delta) yield delta;
+    if (delta) yield { kind: "text", text: delta };
   }
 }
 
@@ -119,7 +195,10 @@ const connectors: Record<ProviderType, Connector> = {
 export function streamChat(
   provider: Provider,
   opts: StreamOptions,
-): AsyncGenerator<string> {
+): AsyncGenerator<StreamEvent> {
+  // The synthesized Hermes (Gateway) provider speaks the agentic Runs API, not
+  // plain /chat/completions — that's how we get live reasoning + tool events.
+  if (provider.kind === "gateway") return hermesRunsStream(provider, opts);
   const connector = connectors[provider.type] ?? openaiStream;
   return connector(provider, opts);
 }

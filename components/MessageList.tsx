@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ChatMessage } from "@/lib/types";
+import { ChevronRight, Wrench, Check, X } from "lucide-react";
+import type { ChatMessage, ToolEvent } from "@/lib/types";
+import { Spinner } from "@/components/Spinner";
 
 export function MessageList({
   messages,
@@ -71,12 +73,17 @@ export function MessageList({
             <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.28em] text-porphlbl">
               NIPHATES
             </div>
+            {m.reasoning ? <ReasoningBlock text={m.reasoning} /> : null}
+            {m.toolCalls && m.toolCalls.length > 0 ? (
+              <div className="mb-2 flex flex-col gap-1">
+                {m.toolCalls.map((t, ti) => (
+                  <ToolCard key={ti} event={t} />
+                ))}
+              </div>
+            ) : null}
             {waiting ? (
-              <div className="flex items-center gap-3">
-                <span
-                  className="status-dot status-dot-gold glow-pulse"
-                  aria-hidden="true"
-                />
+              <div className="flex items-center gap-2.5 text-gold">
+                <Spinner className="text-[15px]" />
                 <span className="font-read italic text-[16px] text-parch">
                   summoning…
                 </span>
@@ -92,6 +99,65 @@ export function MessageList({
         );
       })}
       <div ref={endRef} />
+    </div>
+  );
+}
+
+/** Collapsible thinking/reasoning preview, folded by default. */
+function ReasoningBlock({ text }: { text: string }) {
+  return (
+    <details className="group mb-2 border-l-2 border-hair pl-3">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-[0.24em] text-mutedlo hover:text-parch">
+        <ChevronRight
+          size={12}
+          className="transition-transform group-open:rotate-90"
+        />
+        Reasoning
+      </summary>
+      <div className="mt-1.5 whitespace-pre-wrap font-read text-[14px] italic leading-[1.55] text-parch">
+        {text}
+      </div>
+    </details>
+  );
+}
+
+/** One tool invocation: name, input preview, and running/done/error state. */
+function ToolCard({ event }: { event: ToolEvent }) {
+  const running = event.status === "started";
+  const icon = running ? (
+    <Spinner className="text-[12px]" />
+  ) : event.error ? (
+    <X size={13} className="text-carnelian" />
+  ) : (
+    <Check size={13} className="text-malach" />
+  );
+  return (
+    <div className="flex items-start gap-2 border border-hair bg-panel px-2.5 py-1.5">
+      <span className="mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center text-gold">
+        {running ? icon : <Wrench size={12} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 font-mono text-[12px] text-marble">
+          <span className="truncate">{event.tool || "tool"}</span>
+          {!running && (
+            <span className="flex items-center gap-1 text-mutedlo">
+              {icon}
+              {event.durationMs != null && (
+                <span className="text-[10.5px]">
+                  {event.durationMs < 1000
+                    ? `${event.durationMs}ms`
+                    : `${(event.durationMs / 1000).toFixed(2)}s`}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+        {event.preview ? (
+          <div className="mt-0.5 truncate font-mono text-[11px] text-mutedlo">
+            {event.preview}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
