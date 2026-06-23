@@ -18,6 +18,8 @@ export function GatewayConnection() {
   const [adminBaseUrl, setAdminBaseUrl] = useState("");
   const [authMode, setAuthMode] = useState("auto");
   const [token, setToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [chatBaseUrl, setChatBaseUrl] = useState("");
   const [chatKey, setChatKey] = useState("");
   const [status, setStatus] = useState("");
@@ -39,6 +41,8 @@ export function GatewayConnection() {
       adminBaseUrl,
       authMode,
       token,
+      username,
+      password,
       chatBaseUrl,
       chatKey,
     });
@@ -56,7 +60,7 @@ export function GatewayConnection() {
       setConnected(true);
       setStatus(
         t.authenticated === false
-          ? `⚠️ Reachable but NOT authenticated — set auth mode "session" + a valid token. Current model: ${t.model ?? "?"}`
+          ? `⚠️ Reachable but NOT authenticated — set auth mode "basic" + valid credentials. Current model: ${t.model ?? "?"}`
           : `✅ Connected${t.authenticated ? " & authenticated" : ""}${t.loopback ? " (loopback, no auth)" : ""}. Current model: ${t.model ?? "?"}`,
       );
     } else {
@@ -109,11 +113,15 @@ export function GatewayConnection() {
             <option value="bearer">bearer token</option>
             <option value="cookie">session cookie</option>
             <option value="session">session (X-Hermes-Session-Token)</option>
+            <option value="basic">basic (username + password)</option>
           </select>
         </label>
         <p className="col-span-1 -mt-1 font-mono text-[10.5px] text-mutedlo sm:col-span-2">
-          Hermes&apos;s management API (model catalog, model switching) requires
-          <span className="text-parch"> session</span> mode.
+          {authMode === "basic"
+            ? "Dashboard uses HTTP Basic Auth for its /api/* endpoints."
+            : authMode === "session"
+              ? "Dashboard's model catalog and model switching require session mode."
+              : "Auto: no auth on loopback, bearer token otherwise."}
         </p>
         <label className="block">
           <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
@@ -128,6 +136,34 @@ export function GatewayConnection() {
           />
         </label>
       </div>
+
+      {authMode === "basic" && (
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+              Username {conn?.hasUsername ? "(set — blank keeps it)" : ""}
+            </span>
+            <input
+              className="inp"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="michael"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+              Password {conn?.hasPassword ? "(set — blank keeps it)" : ""}
+            </span>
+            <input
+              className="inp"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="password…"
+            />
+          </label>
+        </div>
+      )}
 
       <label className="mb-3 block">
         <span className="mb-1 block font-mono text-[11px] uppercase tracking-[0.12em] text-muted">

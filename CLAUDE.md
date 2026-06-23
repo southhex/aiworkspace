@@ -77,10 +77,13 @@ Browser → `/api/hx/<path>` → `hermesFetch` → `<HERMES_ADMIN_URL>/api/<path
   server code** — only a new method in `lib/hermesClient.ts`.
 - `lib/hermes.ts` owns the management connection (disk persistence + authenticated
   `hermesFetch`). The auth **policy** itself — loopback detection and header resolution —
-  lives in the pure, testable `lib/hermesAuth.ts` (loopback URLs need no auth; non-loopback
-  require a `bearer`/`cookie` token; `authMode: "auto"` resolves this). Change auth behavior
-  in `hermesAuth.ts`; `hermes.ts` re-exports its types so existing `@/lib/hermes` imports
-  keep working.
+  lives in the pure, testable `lib/hermesAuth.ts`. Supported auth modes:
+  `auto` (loopback=none, else bearer), `none`, `bearer`, `cookie`, `session`,
+  and **`basic`** (username + password → `POST /auth/password-login` → session cookie).
+  For `basic` mode, `hermesFetch` transparently authenticates on first call and caches
+  the session cookie in memory; cache is invalidated when connection config changes via
+  `saveHermesConnection`. Change auth behavior in `hermesAuth.ts`; `hermes.ts` re-exports
+  its types so existing `@/lib/hermes` imports keep working.
 - `lib/hermesClient.ts` is the browser-side typed client over `/api/hx/*`.
 
 > The inference API (`/v1/*`) and management API (`/api/*`) use **different auth and

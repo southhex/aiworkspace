@@ -35,6 +35,8 @@ function seedFromEnv(): HermesConnection {
     adminBaseUrl: process.env.HERMES_ADMIN_URL || "http://127.0.0.1:9119",
     authMode: (process.env.HERMES_ADMIN_AUTH as HermesAuthMode) || "auto",
     token: process.env.HERMES_ADMIN_TOKEN || "",
+    username: process.env.HERMES_ADMIN_USERNAME || "",
+    password: process.env.HERMES_ADMIN_PASSWORD || "",
     chatBaseUrl: process.env.HERMES_BASE_URL || "http://127.0.0.1:8642/v1",
     chatKey: process.env.HERMES_API_KEY || "",
   };
@@ -55,6 +57,8 @@ export async function getHermesConnection(): Promise<HermesConnection> {
 export async function saveHermesConnection(
   conn: HermesConnection,
 ): Promise<HermesConnection> {
+  // Invalidate session cache when connection config changes
+  sessionCache = null;
   return store.write(conn);
 }
 
@@ -67,6 +71,57 @@ export interface HermesFetchInit {
   signal?: AbortSignal;
   /** Per-request timeout in ms (default 15s). */
   timeoutMs?: number;
+}
+
+// --- Basic auth session management (in-memory, never persisted) ---
+
+interface SessionCache {
+  cookie: string;
+  connFingerprint: string; // invalidated when connection config changes
+}
+
+let sessionCache: SessionCache | null = null;
+let loginPromise: Promise<SessionCache | null> | null = null;
+
+/** Fingerprint the connection config so we know when to re-auth. */
+function connFingerprint(conn: HermesConnection): string {
+  return `${conn.adminBaseUrl}|${conn.username}|${conn.password}`;
+}
+
+/**
+ * Authenticate against the Hermes dashboard's /auth/password-login endpoint.
+ * Returns the hermes_session_at cookie value for use on subsequent API calls.
+ */
+async function basicLogin(conn: HermesConnection): Promise<SessionCache | null> {
+  if (!conn.username || !conn.password) return null;
+
+  const base = conn.adminBaseUrl.replace(/\/$/, "");
+  try {
+    const res = await fetch(`${base}/auth/password-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "basic",
+        username: conn.username,
+        password: conn.password,
+        next: "",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+
+    // Extract the access token cookie from the Set-Cookie header
+    const setCookie = res.headers.get("set-cookie");
+    const atMatch = setCookie?.match(/hermes_session_at=([^;]+)/);
+    if (!atMatch) return null;
+
+    return {
+      cookie: `hermes_session_at=${atMatch[1]}`,
+      connFingerprint: connFingerprint(conn),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -82,6 +137,27 @@ export async function hermesFetch(
   const base = conn.adminBaseUrl.replace(/\/$/, "");
   const url = base + (apiPath.startsWith("/") ? apiPath : `/${apiPath}`);
 
+  // Build auth headers. For basic auth mode, transparently login and use the
+  // session cookie (the dashboard doesn't accept Basic auth directly on API
+  // endpoints — it requires a session cookie from /auth/password-login).
+  let extraHeaders: Record<string, string> = {};
+  if (conn.authMode === "basic") {
+    const fp = connFingerprint(conn);
+    if (!sessionCache || sessionCache.connFingerprint !== fp) {
+      // Deduplicate concurrent login attempts
+      if (!loginPromise) {
+        loginPromise = basicLogin(conn);
+      }
+      sessionCache = await loginPromise;
+      loginPromise = null;
+    }
+    if (sessionCache) {
+      extraHeaders["Cookie"] = sessionCache.cookie;
+    }
+  } else {
+    extraHeaders = authHeaders(conn);
+  }
+
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), init.timeoutMs ?? 15000);
   // If the caller passed a signal, abort our controller when it aborts.
@@ -93,7 +169,7 @@ export async function hermesFetch(
   try {
     return await fetch(url, {
       method: init.method || "GET",
-      headers: { ...authHeaders(conn), ...(init.headers || {}) },
+      headers: { ...extraHeaders, ...(init.headers || {}) },
       body: init.body,
       signal: ctrl.signal,
     });

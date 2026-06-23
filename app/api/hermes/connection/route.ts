@@ -44,6 +44,15 @@ export async function PUT(req: NextRequest) {
       incoming.token === "" || incoming.token === undefined
         ? current.token
         : incoming.token,
+    // Same for username/password in basic auth mode.
+    username:
+      incoming.username === "" || incoming.username === undefined
+        ? current.username
+        : incoming.username,
+    password:
+      incoming.password === "" || incoming.password === undefined
+        ? current.password
+        : incoming.password,
     chatBaseUrl: (incoming.chatBaseUrl ?? current.chatBaseUrl)?.trim(),
     // Blank/undefined chatKey means "keep the existing one".
     chatKey:

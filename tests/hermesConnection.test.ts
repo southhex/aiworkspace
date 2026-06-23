@@ -15,9 +15,12 @@ describe("toPublicConnection", () => {
       adminBaseUrl: "http://100.127.15.14:9119",
       authMode: "session",
       hasToken: true,
+      hasUsername: false,
+      hasPassword: false,
       isLoopback: false,
       chatBaseUrl: "http://100.127.15.14:8642/v1",
       hasChatKey: true,
+      allowedModels: undefined,
     });
     // The raw secrets must never appear on the public view.
     expect(JSON.stringify(pub)).not.toContain("secret-tok");

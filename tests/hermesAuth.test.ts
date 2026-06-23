@@ -79,4 +79,36 @@ describe("authHeaders", () => {
       }),
     ).toEqual({});
   });
+
+  it("basic: sends Authorization: Basic header with base64 encoded username:password", () => {
+    const headers = authHeaders({
+      adminBaseUrl: "http://127.0.0.1:9119",
+      authMode: "basic",
+      username: "michael",
+      password: "correct-horse-battery-staple",
+    });
+    expect(headers).toHaveProperty("Authorization");
+    expect(headers.Authorization).toMatch(/^Basic /);
+    // Decode and verify
+    const b64 = headers.Authorization!.slice(6);
+    const decoded = Buffer.from(b64, "base64").toString();
+    expect(decoded).toBe("michael:correct-horse-battery-staple");
+  });
+
+  it("basic: sends nothing without username or password", () => {
+    expect(
+      authHeaders({
+        adminBaseUrl: "http://127.0.0.1:9119",
+        authMode: "basic",
+        username: "user",
+      }),
+    ).toEqual({});
+    expect(
+      authHeaders({
+        adminBaseUrl: "http://127.0.0.1:9119",
+        authMode: "basic",
+        password: "pass",
+      }),
+    ).toEqual({});
+  });
 });

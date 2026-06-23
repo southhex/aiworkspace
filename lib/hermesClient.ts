@@ -142,8 +142,10 @@ export interface ActiveProfileResponse {
 
 export interface PublicHermesConnection {
   adminBaseUrl: string;
-  authMode: "auto" | "none" | "bearer" | "cookie" | "session";
+  authMode: "auto" | "none" | "bearer" | "cookie" | "session" | "basic";
   hasToken: boolean;
+  hasUsername: boolean;
+  hasPassword: boolean;
   isLoopback: boolean;
   chatBaseUrl?: string;
   hasChatKey: boolean;
@@ -178,6 +180,8 @@ export async function saveConnection(body: {
   adminBaseUrl: string;
   authMode: string;
   token?: string;
+  username?: string;
+  password?: string;
   chatBaseUrl?: string;
   chatKey?: string;
 }): Promise<{ ok: boolean; error?: string; connection?: PublicHermesConnection }> {

@@ -57,10 +57,34 @@ export function flushConversations(): Promise<void> {
   return flush();
 }
 
+// --- Helpers -----------------------------------------------------------
+
+let _cryptoRandomUUID: (() => string) | undefined;
+
+function makeId(): string {
+  if (!_cryptoRandomUUID) {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof (crypto as { randomUUID?: () => string }).randomUUID === "function"
+    ) {
+      _cryptoRandomUUID = () => (crypto as { randomUUID: () => string }).randomUUID();
+    } else {
+      // Fallback UUID v4 when crypto.randomUUID isn't available (e.g. older
+      // browsers or non-secure contexts).
+      _cryptoRandomUUID = () =>
+        "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+        });
+    }
+  }
+  return _cryptoRandomUUID();
+}
+
 export function newConversation(providerId: string, model: string): Conversation {
   const now = Date.now();
   return {
-    id: crypto.randomUUID(),
+    id: makeId(),
     title: "New chat",
     providerId,
     model,

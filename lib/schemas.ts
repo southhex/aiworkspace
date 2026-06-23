@@ -54,6 +54,7 @@ export const hermesAuthModeSchema = z.enum([
   "bearer",
   "cookie",
   "session",
+  "basic",
 ]);
 
 /** PUT body for the Hermes connection — partial; merged over current config. */
@@ -61,6 +62,8 @@ export const hermesConnectionInputSchema = z.object({
   adminBaseUrl: z.string().url().optional(),
   authMode: hermesAuthModeSchema.optional(),
   token: z.string().optional(),
+  username: z.string().optional(),
+  password: z.string().optional(),
   // The Gateway also owns the inference (/v1) endpoint for chat. Blank chatKey
   // (like a blank token) means "keep the stored secret".
   chatBaseUrl: z.string().url().optional(),
