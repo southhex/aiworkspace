@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HermesModelCatalog } from "@/components/HermesModelCatalog";
 import { HermesModelFilter } from "@/components/HermesModelFilter";
+import { SessionsView } from "@/components/SessionsView";
 import { CHAMBER_SUBSECTIONS } from "@/components/chambers";
 import {
   getConnection,
@@ -125,6 +126,8 @@ export function CommandView({ section }: { section: string }) {
           </Link>{" "}
           to control Hermes.
         </div>
+      ) : section === "sessions" ? (
+        <SessionsView />
       ) : section === "models" ? (
         <section className="border border-hair bg-paneldk p-4">
           <div className="mb-3 font-mono text-[10.5px] uppercase tracking-[0.22em] text-muted">
