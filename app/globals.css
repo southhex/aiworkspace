@@ -70,13 +70,6 @@ body {
   overscroll-behavior: none;
 }
 
-/* Sharp corners everywhere */
-*,
-*::before,
-*::after {
-  border-radius: 0 !important;
-}
-
 /* Selection */
 ::selection {
   background: var(--gold);

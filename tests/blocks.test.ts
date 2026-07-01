@@ -3,6 +3,9 @@ import {
   applyToolEvent,
   appendReasoningDelta,
   appendTextDelta,
+  formatDuration,
+  groupToolRuns,
+  hoistReasoning,
   mergeAdjacentText,
 } from "../lib/blocks";
 import type { ChatBlock, ChatMessage } from "../lib/types";
@@ -81,6 +84,156 @@ describe("mergeAdjacentText", () => {
     const snapshot = JSON.parse(JSON.stringify(input));
     mergeAdjacentText(input);
     expect(input).toEqual(snapshot);
+  });
+});
+
+describe("formatDuration", () => {
+  it("renders sub-second values as whole milliseconds", () => {
+    expect(formatDuration(0)).toBe("0ms");
+    expect(formatDuration(42)).toBe("42ms");
+    expect(formatDuration(999)).toBe("999ms");
+  });
+
+  it("rounds fractional milliseconds", () => {
+    expect(formatDuration(42.6)).toBe("43ms");
+  });
+
+  it("renders one second and above as seconds with two decimals", () => {
+    expect(formatDuration(1000)).toBe("1.00s");
+    expect(formatDuration(1500)).toBe("1.50s");
+    expect(formatDuration(12345)).toBe("12.35s");
+  });
+});
+
+describe("hoistReasoning", () => {
+  it("returns an empty array unchanged", () => {
+    expect(hoistReasoning([])).toEqual([]);
+  });
+
+  it("moves a trailing reasoning block above the text it follows", () => {
+    const out = hoistReasoning([
+      { type: "text", text: "answer" },
+      { type: "reasoning", text: "why" },
+    ]);
+    expect(out).toEqual([
+      { type: "reasoning", text: "why" },
+      { type: "text", text: "answer" },
+    ]);
+  });
+
+  it("leaves already thinking-first order unchanged", () => {
+    const input: ChatBlock[] = [
+      { type: "reasoning", text: "why" },
+      { type: "text", text: "answer" },
+    ];
+    expect(hoistReasoning(input)).toEqual(input);
+  });
+
+  it("hoists per tool-bounded segment without moving tools", () => {
+    const out = hoistReasoning([
+      { type: "text", text: "a" },
+      { type: "reasoning", text: "r1" },
+      { type: "tool", tool: "x", status: "completed" },
+      { type: "text", text: "b" },
+      { type: "reasoning", text: "r2" },
+    ]);
+    expect(out).toEqual([
+      { type: "reasoning", text: "r1" },
+      { type: "text", text: "a" },
+      { type: "tool", tool: "x", status: "completed" },
+      { type: "reasoning", text: "r2" },
+      { type: "text", text: "b" },
+    ]);
+  });
+
+  it("preserves relative order among same-kind blocks in a segment", () => {
+    const out = hoistReasoning([
+      { type: "text", text: "t1" },
+      { type: "reasoning", text: "r1" },
+      { type: "text", text: "t2" },
+      { type: "reasoning", text: "r2" },
+    ]);
+    expect(out).toEqual([
+      { type: "reasoning", text: "r1" },
+      { type: "reasoning", text: "r2" },
+      { type: "text", text: "t1" },
+      { type: "text", text: "t2" },
+    ]);
+  });
+});
+
+describe("groupToolRuns", () => {
+  it("returns an empty array unchanged", () => {
+    expect(groupToolRuns([])).toEqual([]);
+  });
+
+  it("leaves a lone tool block ungrouped", () => {
+    const out = groupToolRuns([
+      { type: "text", text: "a" },
+      { type: "tool", tool: "x", status: "started" },
+      { type: "text", text: "b" },
+    ]);
+    expect(out).toEqual([
+      { type: "text", text: "a" },
+      { type: "tool", tool: "x", status: "started" },
+      { type: "text", text: "b" },
+    ]);
+  });
+
+  it("groups two or more consecutive tool blocks", () => {
+    const out = groupToolRuns([
+      { type: "tool", tool: "read_file", status: "completed" },
+      { type: "tool", tool: "read_file", status: "completed" },
+      { type: "tool", tool: "terminal", status: "started" },
+    ]);
+    expect(out).toEqual([
+      {
+        type: "tool-group",
+        items: [
+          { type: "tool", tool: "read_file", status: "completed" },
+          { type: "tool", tool: "read_file", status: "completed" },
+          { type: "tool", tool: "terminal", status: "started" },
+        ],
+      },
+    ]);
+  });
+
+  it("breaks a run on an intervening non-tool block", () => {
+    const out = groupToolRuns([
+      { type: "tool", tool: "a", status: "completed" },
+      { type: "tool", tool: "b", status: "completed" },
+      { type: "reasoning", text: "hmm" },
+      { type: "tool", tool: "c", status: "completed" },
+      { type: "tool", tool: "d", status: "completed" },
+    ]);
+    expect(out).toEqual([
+      {
+        type: "tool-group",
+        items: [
+          { type: "tool", tool: "a", status: "completed" },
+          { type: "tool", tool: "b", status: "completed" },
+        ],
+      },
+      { type: "reasoning", text: "hmm" },
+      {
+        type: "tool-group",
+        items: [
+          { type: "tool", tool: "c", status: "completed" },
+          { type: "tool", tool: "d", status: "completed" },
+        ],
+      },
+    ]);
+  });
+
+  it("flushes a trailing single tool as a lone block, not a group", () => {
+    const out = groupToolRuns([
+      { type: "reasoning", text: "x" },
+      { type: "tool", tool: "solo", status: "started" },
+    ]);
+    expect(out).toEqual([
+      { type: "reasoning", text: "x" },
+      { type: "tool", tool: "solo", status: "started" },
+    ]);
   });
 });
 
@@ -212,5 +365,46 @@ describe("applyToolEvent", () => {
     applyToolEvent(m, { tool: "x", status: "started" });
     expect(m.blocks).toBeUndefined();
     expect(m.toolCalls).toBeUndefined();
+  });
+
+  it("preserves the started preview when completion omits it (preview: undefined)", () => {
+    const m = assistant([
+      { type: "tool", tool: "terminal", status: "started", preview: "ls -la" },
+    ]);
+    // The client always sends a `preview` key, undefined on completion — it
+    // must not clobber the command captured at start time.
+    const out = applyToolEvent(m, {
+      tool: "terminal",
+      status: "completed",
+      preview: undefined,
+      durationMs: 12,
+    });
+    expect(out.blocks).toEqual([
+      {
+        type: "tool",
+        tool: "terminal",
+        status: "completed",
+        preview: "ls -la",
+        durationMs: 12,
+      },
+    ]);
+  });
+
+  it("settles output from a completion onto the started block", () => {
+    const m = assistant([
+      { type: "tool", tool: "read_file", status: "started", preview: "SOUL.md" },
+    ]);
+    const out = applyToolEvent(m, {
+      tool: "read_file",
+      status: "completed",
+      output: "file contents",
+    });
+    expect(out.blocks?.[0]).toEqual({
+      type: "tool",
+      tool: "read_file",
+      status: "completed",
+      preview: "SOUL.md",
+      output: "file contents",
+    });
   });
 });

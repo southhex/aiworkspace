@@ -104,7 +104,7 @@ export function ComposerModelSwitch({ profile }: { profile: string }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         title={current ? `${current.model} · ${current.provider}` : "Switch model"}
-        className="flex items-center gap-1 bg-panel px-2.5 py-1 font-mono text-[11px] text-gold transition-colors hover:text-goldbri"
+        className="flex items-center gap-1 rounded-[6px] bg-panel px-2.5 py-1 font-mono text-[11px] text-gold transition-colors hover:text-goldbri"
       >
         <span className="max-w-[140px] truncate">
           {current ? shortModel(current.model) : "model"}
@@ -113,7 +113,7 @@ export function ComposerModelSwitch({ profile }: { profile: string }) {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 z-20 mb-2 w-[340px] border border-hair bg-void p-3 shadow-lg">
+        <div className="absolute bottom-full right-0 z-20 mb-2 w-[340px] rounded-[6px] border border-hair bg-void p-3 shadow-lg">
           <div className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.2em] text-mutedlo">
             {profile} · model
           </div>

@@ -6,6 +6,108 @@
 import type { ChatBlock, ChatMessage, ToolEvent } from "./types";
 
 /**
+ * Shallow-merge `patch` onto `base`, skipping `patch` keys whose value is
+ * `undefined`. Used to settle a `tool.completed` event onto its `started`
+ * block without the client's always-present `preview: undefined` clobbering
+ * the command captured at start time.
+ */
+function mergeDefined<T extends object>(base: T, patch: Partial<T>): T {
+  const out = { ...base };
+  for (const k in patch) {
+    const v = patch[k];
+    if (v !== undefined) out[k] = v as T[Extract<keyof T, string>];
+  }
+  return out;
+}
+
+/** A tool block within the block list (narrowed from the `ChatBlock` union). */
+export type ToolBlock = Extract<ChatBlock, { type: "tool" }>;
+
+/**
+ * A render-only shape: either a plain `ChatBlock`, or a run of ≥2 consecutive
+ * tool blocks collapsed into one group so the UI can cluster them tightly.
+ * Produced by `groupToolRuns`; never persisted.
+ */
+export type RenderBlock = ChatBlock | { type: "tool-group"; items: ToolBlock[] };
+
+/**
+ * Format a millisecond duration for display: sub-second as whole `ms`,
+ * otherwise seconds to two decimals. Shared by the live per-tool/turn timers
+ * and the settled `durationMs` so a running timer snaps to an identically
+ * formatted final value on completion.
+ */
+export function formatDuration(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(2)}s`;
+}
+
+/**
+ * Cluster runs of ≥2 consecutive tool blocks into a single `tool-group` so the
+ * renderer can lay them out tightly. A lone tool block (not part of a run), and
+ * every non-tool block, passes through unchanged. A text/reasoning block breaks
+ * the run. Pure and render-only — mirrors `mergeAdjacentText`; apply it after.
+ */
+export function groupToolRuns(blocks: ChatBlock[]): RenderBlock[] {
+  const out: RenderBlock[] = [];
+  let run: ToolBlock[] = [];
+
+  const flush = () => {
+    if (run.length >= 2) {
+      out.push({ type: "tool-group", items: run });
+    } else if (run.length === 1) {
+      out.push(run[0]);
+    }
+    run = [];
+  };
+
+  for (const block of blocks) {
+    if (block.type === "tool") {
+      run.push(block);
+    } else {
+      flush();
+      out.push(block);
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Ensure reasoning renders above the output it produced: within each maximal
+ * run of non-tool blocks, all `reasoning` blocks are pulled ahead of the
+ * `text` blocks (relative order preserved within each kind). Tool blocks act as
+ * barriers, so the chronological position of tool calls is never disturbed —
+ * only a step's "Thinking" and its answer text are ordered thinking-first.
+ *
+ * This matters because Hermes can emit a step's `reasoning.available` after its
+ * `message.delta` text, which would otherwise render "Thinking" below its
+ * answer. Pure and render-only; apply before `mergeAdjacentText`.
+ */
+export function hoistReasoning(blocks: ChatBlock[]): ChatBlock[] {
+  const out: ChatBlock[] = [];
+  let reasoning: ChatBlock[] = [];
+  let text: ChatBlock[] = [];
+
+  const flush = () => {
+    out.push(...reasoning, ...text);
+    reasoning = [];
+    text = [];
+  };
+
+  for (const block of blocks) {
+    if (block.type === "tool") {
+      flush();
+      out.push(block);
+    } else if (block.type === "reasoning") {
+      reasoning.push(block);
+    } else {
+      text.push(block);
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
  * Collapse runs of adjacent text blocks into a single block whose `text` is
  * the concatenation of all of them. The plan explicitly asks for this so
  * ReactMarkdown re-renders one accumulated answer (matches the pre-blocks
@@ -90,7 +192,7 @@ export function applyToolEvent(last: ChatMessage, event: ToolEvent): ChatMessage
     for (let i = blocks.length - 1; i >= 0; i--) {
       const b = blocks[i];
       if (b.type === "tool" && b.tool === event.tool && b.status === "started") {
-        blocks[i] = { ...b, ...event };
+        blocks[i] = mergeDefined(b, event);
         blockUpdated = true;
         break;
       }
@@ -100,7 +202,7 @@ export function applyToolEvent(last: ChatMessage, event: ToolEvent): ChatMessage
     // Mirror against the flat toolCalls array for backward-compat read paths.
     for (let i = calls.length - 1; i >= 0; i--) {
       if (calls[i].tool === event.tool && calls[i].status === "started") {
-        calls[i] = { ...calls[i], ...event };
+        calls[i] = mergeDefined(calls[i], event);
         return { ...last, toolCalls: calls, blocks };
       }
     }

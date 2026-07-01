@@ -562,12 +562,16 @@ export default function Home() {
         onRename={handleRename}
       />
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar — transparent, borderless; insets clear the notch */}
-        <header className="flex items-center gap-2 pb-2 pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))]">
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        {/* Top controls — a floating overlay (not a bar): absolutely positioned so
+            it reserves no vertical space, letting the pane below fill the full
+            height and scroll to the very top. `pointer-events-none` on the wrapper
+            lets scrolls/clicks pass through to the content; each control re-enables
+            its own pointer events. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center gap-2 pb-2 pl-[calc(0.75rem+env(safe-area-inset-left))] pr-[calc(0.75rem+env(safe-area-inset-right))] pt-[calc(0.5rem+env(safe-area-inset-top))]">
           {!sidebarOpen && (
             <button
-              className="-ml-1 flex h-9 w-9 items-center justify-center text-parch hover:text-marble"
+              className="pointer-events-auto -ml-1 flex h-9 w-9 items-center justify-center rounded-[6px] bg-[rgba(8,7,10,0.5)] text-parch backdrop-blur-md hover:text-marble"
               onClick={() => setSidebarOpen(true)}
               aria-label="Show sidebar"
             >
@@ -576,32 +580,36 @@ export default function Home() {
           )}
 
           <div className="flex flex-1 items-center justify-end gap-2 overflow-x-auto">
-            {/* Provider chip */}
-            <div className="flex items-center gap-1.5 border border-hair bg-panel px-3 py-2 md:px-2.5 md:py-1.5">
-              <span className="status-dot status-dot-malach" />
-              <Select
-                value={providerId}
-                onChange={onProviderChange}
-                options={providers.map((p) => ({ value: p.id, label: p.name }))}
-                disabled={noProviders}
-                placeholder="No providers"
-                valueClassName="text-marble"
-              />
-            </div>
+            {/* Provider chip — dialogue chamber only */}
+            {activeChamber === "dialogue" && (
+              <div className="pointer-events-auto flex items-center gap-1.5 border border-hair bg-panel px-3 py-2 md:px-2.5 md:py-1.5">
+                <span className="status-dot status-dot-malach" />
+                <Select
+                  value={providerId}
+                  onChange={onProviderChange}
+                  options={providers.map((p) => ({ value: p.id, label: p.name }))}
+                  disabled={noProviders}
+                  placeholder="No providers"
+                  valueClassName="text-marble"
+                />
+              </div>
+            )}
 
             {/* Settings gear — sole entry point to Settings */}
             <Link
               href="/settings"
               aria-label="Settings"
-              className="flex h-9 w-9 items-center justify-center text-parch hover:text-marble"
+              className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-[6px] bg-[rgba(8,7,10,0.5)] text-parch backdrop-blur-md hover:text-marble"
             >
               <SettingsIcon size={18} />
             </Link>
           </div>
-        </header>
+        </div>
 
-        {/* Main pane — swaps by active chamber */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {/* Main pane — swaps by active chamber. Top padding clears the floating
+            icon overlay (~52px + notch) so first-load content isn't hidden under
+            it; content still scrolls up under the icons afterwards. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-[calc(3.5rem+env(safe-area-inset-top))]">
           {activeChamber === "dialogue" ? (
             noProviders ? (
               <div className="flex h-full items-center justify-center px-6 text-center">

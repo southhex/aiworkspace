@@ -87,6 +87,7 @@ export async function streamChatRequest(
             tool: evt.tool,
             status: evt.status,
             preview: evt.preview,
+            output: evt.output,
             durationMs: evt.durationMs,
             error: evt.error,
           });

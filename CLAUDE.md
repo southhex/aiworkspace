@@ -179,6 +179,69 @@ than a stale or placeholder tab; chambers with no subsections (Dialogue, not-yet
 leave `subsection` untouched. `subsection` is a single shared state across chambers.
 `components/ChamberPlaceholder.tsx` renders the generic "not yet built" state.
 
+### Chat surface (Dialogue chamber)
+
+An assistant turn renders as a **chronological block stream**, not bucketed sections.
+`ChatMessage.blocks: ChatBlock[]` (`text` / `reasoning` / `tool`) is the source of truth;
+the flat `content` / `reasoning` / `toolCalls` fields stay in sync only for search,
+persistence, and the legacy renderer. Streaming reducers live in `lib/blocks.ts`
+(`appendTextDelta`, `appendReasoningDelta`, `applyToolEvent`) and run off `page.tsx`'s
+`onDelta` / `onReasoning` / `onTool` handlers in strict arrival order — nothing reorders
+events at ingest.
+
+`MessageList.tsx`'s `BlockRenderer` transforms blocks for display through three pure,
+unit-tested passes in `lib/blocks.ts` (see `tests/blocks.test.ts`), applied in order:
+
+1. `hoistReasoning` — within each tool-bounded segment, pull `reasoning` ahead of `text`
+   so "Thinking" sits above the answer it produced (Hermes can emit `reasoning.available`
+   *after* a step's `message.delta`). Tool blocks are barriers, so tool order is untouched.
+2. `mergeAdjacentText` — concatenate adjacent text blocks into one ReactMarkdown render.
+3. `groupToolRuns` — collapse runs of ≥2 consecutive tool blocks into a `tool-group`
+   rendered tightly; `ToolGroup` shows the first 6 with a `+k more` toggle beyond that.
+
+Presentational components:
+- `ToolCard` — one dimmed mono line per tool (no card border), flush-left icon; clicking
+  the **whole line** (no caret) expands the command and captured output when present. A
+  running tool shows a `Spinner` + live-ms timer (browser-perceived elapsed via a local
+  `performance.now()` ref) that snaps to the server's `durationMs` on completion. Success
+  has no checkmark; errors tint the row `text-carnelian`.
+- `ReasoningBlock` — collapsed "Thinking" caption (glow-pulse while streaming), click to reveal.
+- `TurnTimer` (`components/TurnTimer.tsx`) — total-turn timer that replaced "summoning…":
+  ticks from `0.0s` while streaming (Spinner), freezes with a `▩` on completion. An
+  `everActiveRef` guard means a message loaded from disk (never streamed this session)
+  renders no phantom timer.
+- All durations go through `formatDuration(ms)` (`lib/blocks.ts`) so live and settled
+  values format identically.
+
+**Tool output** is threaded end-to-end via `ToolEvent.output` / `ChatBlock` `output`
+(`runsEvents.ts` reads `output`/`result` off `tool.completed` → route → `client.ts` →
+`applyToolEvent`). Hermes' documented v0.17.0 vocab doesn't emit it, so the expanded view
+degrades to just the command until the gateway does. `applyToolEvent` settles a completion
+onto its `started` block with a **defined-only merge** (`mergeDefined`) so the client's
+always-present `preview: undefined` on completion can't clobber the captured command.
+
+**Composer** (`components/Composer.tsx`) is single-line by default and drops to a two-line
+(input-over-toolbar) layout when the typed text would collide with the right-hand controls
+— and always on mobile (`< md`, via `matchMedia`). The single↔two-line decision is measured
+deterministically off a hidden mirror span (the single-line width threshold is frozen while
+stacked → no boundary oscillation) in a pre-paint `useLayoutEffect`. Gold `❯` prompt caret +
+gold text caret; toolbar is `+` (attach, left) and the model pill + mic (right; mic becomes
+Stop while streaming), the `+` dropping to the bottom row when stacked. `zoom: 0.9` +
+`max-w-[933px]` ≈ 840px effective (~10px past the 820px `MessageList` stream on each side).
+
+**Top controls are a floating overlay, not a bar** (`page.tsx`): absolutely positioned
+(`pointer-events-none` wrapper, `pointer-events-auto` children) so they reserve no vertical
+space and the pane fills full height. The scroll pane has `pt-[calc(3.5rem+safe-area)]` so
+first-load content clears the icons; the drawer/settings icons sit on a frosted
+`rgba(8,7,10,0.5)` + `backdrop-blur-md` chip to stand off content scrolling under them. The
+**provider picker renders in the Dialogue chamber only**; the settings gear is always shown.
+
+**Corners**: the old global `* { border-radius: 0 !important }` reset is gone — sharp is
+still the default, but elements opt into rounding with normal `rounded-*` classes (composer
+box, operator/model pills, command picker, model popout). Since `--void`/`--gold` are bare
+hexes, `bg-*/<opacity>` modifiers silently no-op — use explicit `rgba()` / `color-mix` for
+translucency (the same footgun as Sanctum's gold tints).
+
 ### Honcho dashboard (`Command → Memory`)
 
 Honcho is the long-term memory layer for the Hermes ecosystem — it stores per-peer

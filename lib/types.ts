@@ -62,6 +62,8 @@ export interface ToolEvent {
   status: "started" | "completed";
   /** Short preview of the tool input (e.g. the code/command being run). */
   preview?: string;
+  /** Tool output/result once completed, when the upstream emits it. */
+  output?: string;
   /** Wall-clock duration once completed. */
   durationMs?: number;
   /** True if the tool finished with an error. */
@@ -77,6 +79,7 @@ export type ChatBlock =
       tool: string;
       status: "started" | "completed";
       preview?: string;
+      output?: string;
       durationMs?: number;
       error?: boolean;
     };
@@ -109,6 +112,7 @@ export type StreamEvent =
       tool: string;
       status: "started" | "completed";
       preview?: string;
+      output?: string;
       durationMs?: number;
       error?: boolean;
     }

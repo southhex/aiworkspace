@@ -1,16 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import {
-  ChevronRight,
-  Wrench,
-  Check,
-  X,
-  FileText,
-  Terminal,
-  Search,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Wrench, X, FileText, Terminal, Search } from "lucide-react";
 import type { ToolEvent } from "@/lib/types";
+import { formatDuration } from "@/lib/blocks";
 import { Spinner } from "./Spinner";
 import { CopyButton } from "./CopyButton";
 
@@ -51,12 +44,18 @@ function toolLabel(tool: string): string {
 }
 
 /**
- * One row per tool invocation. Shows the tool name, a one-line preview, and a
- * status glyph (spinner / check / X). When the tool has a preview, the row is
- * clickable and expands a full-width code-styled preview with its own copy
- * button. The `streaming` prop is reserved for callers that want to show a
- * live indicator on a still-running tool — today nothing visual depends on it
- * since `status === "started"` already shows a spinner.
+ * One dimmed mono line per tool invocation: glyph, tool label, a truncated
+ * one-line preview, and the duration/live timer, left-to-right. Successful
+ * completions carry no checkmark — just their run details. When the tool has a
+ * command preview and/or captured output the line is clickable and expands a
+ * full-width code-styled view (command, then output when available) with a copy
+ * button.
+ *
+ * While a tool is running we tick a local timer showing browser-perceived
+ * elapsed time (from receipt of the `started` event to now). That includes
+ * stream latency so it reads slightly high, then snaps to the server's
+ * authoritative `event.durationMs` on completion. The `streaming` prop is
+ * reserved for callers wanting a live indicator; the spinner already covers it.
  */
 export function ToolCard({
   event,
@@ -68,70 +67,73 @@ export function ToolCard({
   const [open, setOpen] = useState(false);
   const running = event.status === "started";
   const Icon = detectIcon(event.tool);
+  const hasDetail = Boolean(event.preview || event.output);
 
-  const statusIcon = running ? (
-    <Spinner className="text-[12px]" />
-  ) : event.error ? (
-    <X size={13} className="text-carnelian" />
-  ) : (
-    <Check size={13} className="text-malach" />
-  );
+  // Local live timer — captures the first render where the tool is running as
+  // the start instant, ticks while running, and is discarded once settled.
+  const startedAtRef = useRef<number | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    if (startedAtRef.current == null) startedAtRef.current = performance.now();
+    const id = setInterval(() => setTick((t) => t + 1), 100);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const liveMs =
+    running && startedAtRef.current != null
+      ? performance.now() - startedAtRef.current
+      : null;
 
   return (
-    <div className="group/tool border border-hair bg-panel">
+    <div className="group/tool">
       <button
         type="button"
-        onClick={() => (event.preview ? setOpen(!open) : undefined)}
-        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left ${
-          event.preview
-            ? "cursor-pointer hover:bg-panel2"
-            : "cursor-default"
-        }`}
+        onClick={() => (hasDetail ? setOpen(!open) : undefined)}
+        className={`flex w-full items-center gap-2 py-0.5 pr-2.5 text-left font-mono text-[12px] ${
+          event.error ? "text-carnelian" : "text-mutedlo"
+        } ${hasDetail ? "cursor-pointer hover:text-parch" : "cursor-default"}`}
       >
-        {event.preview ? (
-          <ChevronRight
-            size={11}
-            className={`shrink-0 text-mutedlo transition-transform ${
-              open ? "rotate-90" : ""
-            }`}
-          />
-        ) : (
-          <span className="w-[11px] shrink-0" />
-        )}
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-gold">
-          {running ? statusIcon : <Icon size={12} className="text-mutedlo" />}
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+          {running ? <Spinner className="text-[12px]" /> : <Icon size={12} />}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 font-mono text-[12px] text-marble">
-            <span className="shrink-0">{toolLabel(event.tool)}</span>
-            {event.preview && !open && (
-              <span className="truncate text-[11px] text-mutedlo">
-                {event.preview}
-              </span>
-            )}
-            {!running && (
-              <span className="flex shrink-0 items-center gap-1 text-mutedlo">
-                {statusIcon}
-                {event.durationMs != null && (
-                  <span className="text-[10.5px]">
-                    {event.durationMs < 1000
-                      ? `${event.durationMs}ms`
-                      : `${(event.durationMs / 1000).toFixed(2)}s`}
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
-      {open && event.preview && (
-        <div className="relative border-t border-hair px-2.5 py-2">
-          <div className="absolute right-2 top-1.5">
-            <CopyButton text={event.preview} />
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-parch pr-16">
+        <span className="shrink-0">{toolLabel(event.tool)}</span>
+        {event.preview && !open && (
+          <span className="min-w-0 flex-1 truncate text-[11px]">
             {event.preview}
-          </pre>
+          </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1 pl-2">
+          {running && liveMs != null && (
+            <span className="text-[10.5px]">{formatDuration(liveMs)}</span>
+          )}
+          {!running && event.durationMs != null && (
+            <span className="text-[10.5px]">
+              {formatDuration(event.durationMs)}
+            </span>
+          )}
+          {!running && event.error && <X size={13} className="text-carnelian" />}
+        </span>
+      </button>
+      {open && hasDetail && (
+        <div className="relative ml-[24px] border-l border-hair px-2.5 py-1.5">
+          <div className="absolute right-1.5 top-1">
+            <CopyButton text={event.output || event.preview || ""} />
+          </div>
+          {event.preview && (
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-mutedlo pr-16">
+              {event.preview}
+            </pre>
+          )}
+          {event.output && (
+            <pre
+              className={`overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-parch pr-16 ${
+                event.preview ? "mt-1.5 border-t border-hair pt-1.5" : ""
+              }`}
+            >
+              {event.output}
+            </pre>
+          )}
         </div>
       )}
     </div>

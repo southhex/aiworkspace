@@ -19,11 +19,14 @@ export function CopyButton({
   label = "Copy",
   className = "",
   iconSize = 13,
+  iconOnly = false,
 }: {
   text: string | (() => string);
   label?: string;
   className?: string;
   iconSize?: number;
+  /** Render just the icon (no label / "Copied" / "Failed" text). */
+  iconOnly?: boolean;
 }) {
   const [status, setStatus] = useState<"idle" | "copied" | "error">("idle");
   const resetRef = useRef<number | null>(null);
@@ -66,7 +69,8 @@ export function CopyButton({
       className={`inline-flex items-center gap-1 font-mono text-[10.5px] uppercase tracking-[0.2em] text-mutedlo transition-colors hover:text-parch ${colorClass} ${className}`}
     >
       <Icon size={iconSize} />
-      {status === "copied" ? "Copied" : status === "error" ? "Failed" : label}
+      {!iconOnly &&
+        (status === "copied" ? "Copied" : status === "error" ? "Failed" : label)}
     </button>
   );
 }

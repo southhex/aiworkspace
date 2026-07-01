@@ -9,6 +9,7 @@ export const toolEventSchema = z.object({
   tool: z.string(),
   status: z.enum(["started", "completed"]),
   preview: z.string().optional(),
+  output: z.string().optional(),
   durationMs: z.number().optional(),
   error: z.boolean().optional(),
 });
@@ -21,6 +22,7 @@ export const chatBlockSchema = z.union([
     tool: z.string(),
     status: z.enum(["started", "completed"]),
     preview: z.string().optional(),
+    output: z.string().optional(),
     durationMs: z.number().optional(),
     error: z.boolean().optional(),
   }),

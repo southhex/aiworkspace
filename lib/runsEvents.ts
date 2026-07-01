@@ -43,6 +43,16 @@ export function mapRunsEvent(payload: string): StreamEvent | null {
         kind: "tool",
         tool: String(e.tool ?? ""),
         status: "completed",
+        // Some builds echo the input preview on completion too; pass it through
+        // when present (the started event is the usual source).
+        preview: typeof e.preview === "string" ? e.preview : undefined,
+        // Tool result, when the gateway emits one (field name varies by build).
+        output:
+          typeof e.output === "string"
+            ? e.output
+            : typeof e.result === "string"
+              ? e.result
+              : undefined,
         durationMs:
           e.duration != null && !Number.isNaN(Number(e.duration))
             ? Math.round(Number(e.duration) * 1000)

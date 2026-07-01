@@ -27,7 +27,7 @@ export function ApprovalCard({
   onRespond: (choice: Choice) => void;
 }) {
   return (
-    <div className="mx-auto mb-2 w-full max-w-[720px] px-6" style={{ zoom: 0.9 }}>
+    <div className="mx-auto mb-2 w-full max-w-[933px] px-6" style={{ zoom: 0.9 }}>
       <div className="border border-gold/40 bg-panel px-4 py-3">
         <div className="mb-2 flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.28em] text-gold">
           <ShieldAlert size={12} />

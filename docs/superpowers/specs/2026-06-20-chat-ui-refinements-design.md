@@ -7,8 +7,9 @@
 
 Five visual/behavioural refinements to the Niphates chat surface. All changes are
 client-side (React components + page state); no API routes, connectors, or on-disk
-schemas change. Work stays within the established design language (sharp corners,
-gold/porphyry palette, mono + read fonts, hairline borders).
+schemas change. Work stays within the established design language (mostly-sharp
+corners with selective rounding on a few elements, gold/porphyry palette, mono +
+read fonts, hairline borders).
 
 Files touched:
 

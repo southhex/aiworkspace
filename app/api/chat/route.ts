@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
               tool: ev.tool,
               status: ev.status,
               preview: ev.preview,
+              output: ev.output,
               durationMs: ev.durationMs,
               error: ev.error,
             });

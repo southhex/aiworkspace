@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage } from "@/lib/types";
-import { mergeAdjacentText } from "@/lib/blocks";
-import { Spinner } from "@/components/Spinner";
+import type { ToolBlock } from "@/lib/blocks";
+import { groupToolRuns, hoistReasoning, mergeAdjacentText } from "@/lib/blocks";
 import { CopyButton } from "@/components/CopyButton";
 import { ReasoningBlock } from "@/components/ReasoningBlock";
 import { ToolCard } from "@/components/ToolCard";
+import { TurnTimer } from "@/components/TurnTimer";
+
+const MAX_CLUSTER = 6;
 
 export function MessageList({
   messages,
@@ -52,19 +55,24 @@ export function MessageList({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5 px-6 pt-[26px] pb-8">
+    <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-5 pt-[18px] pb-6">
       {visible.map((m, i) => {
         const isUser = m.role === "user";
         const isLast = i === visible.length - 1;
-        const waiting = !isUser && !m.content && streaming && isLast;
 
         if (isUser) {
           return (
-            <div key={i} className="ml-16 border border-hair bg-panel px-4 py-3.5">
+            <div
+              key={i}
+              className="group/op relative ml-16 rounded-[6px] border border-hair bg-panel px-3.5 py-2.5"
+            >
+              <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover/op:opacity-100">
+                <CopyButton text={() => m.content} iconOnly iconSize={12} />
+              </div>
               <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.28em] text-gold">
                 OPERATOR
               </div>
-              <div className="whitespace-pre-wrap break-words font-mono text-[14px] text-parchdk">
+              <div className="whitespace-pre-wrap break-words font-mono text-[13px] text-parchdk">
                 {m.content}
               </div>
             </div>
@@ -76,26 +84,11 @@ export function MessageList({
             <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.28em] text-porphlbl">
               NIPHATES
             </div>
-            {waiting ? (
-              <div className="flex items-center gap-2.5 text-gold">
-                <Spinner className="text-[15px]" />
-                <span className="font-read italic text-[16px] text-parch">
-                  summoning…
-                </span>
-              </div>
-            ) : (
-              <BlockRenderer
-                m={m}
-                streaming={streaming}
-                isLast={isLast}
-              />
-            )}
+            <BlockRenderer m={m} streaming={streaming} isLast={isLast} />
+            <TurnTimer active={isLast && streaming} />
             {!streaming && m.content && (
-              <div className="mt-1 flex justify-end">
-                <CopyButton
-                  text={() => m.content}
-                  label="Copy message"
-                />
+              <div className="mt-0.5 flex justify-end">
+                <CopyButton text={() => m.content} iconOnly iconSize={12} />
               </div>
             )}
           </div>
@@ -127,12 +120,12 @@ function BlockRenderer({
     return <LegacyAssistantContent m={m} streaming={streaming} isLast={isLast} />;
   }
 
-  const merged = mergeAdjacentText(m.blocks);
+  const grouped = groupToolRuns(mergeAdjacentText(hoistReasoning(m.blocks)));
 
   return (
     <>
-      {merged.map((block, i) => {
-        const isLastBlock = i === merged.length - 1;
+      {grouped.map((block, i) => {
+        const isLastBlock = i === grouped.length - 1;
         const tailStreaming = streaming && isLast && isLastBlock;
 
         if (block.type === "text") {
@@ -140,7 +133,7 @@ function BlockRenderer({
           return (
             <div
               key={i}
-              className="msg-content font-read text-[16px] leading-[1.62] text-agentbody"
+              className="msg-content font-read text-[15px] leading-[1.6] text-agentbody"
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -160,14 +153,45 @@ function BlockRenderer({
             />
           );
         }
-        // tool block
+        if (block.type === "tool-group") {
+          return <ToolGroup key={i} items={block.items} />;
+        }
+        // lone tool block (not part of a run)
         return (
-          <div key={i} className="mb-2">
+          <div key={i} className="mb-1.5">
             <ToolCard event={block} streaming={tailStreaming} />
           </div>
         );
       })}
     </>
+  );
+}
+
+/**
+ * A tight-gap cluster of consecutive tool lines. When more than `MAX_CLUSTER`
+ * tools ran in a row, only the first `MAX_CLUSTER` show, followed by a dimmed
+ * "+k more" toggle that reveals the rest in place (plain show/hide).
+ */
+function ToolGroup({ items }: { items: ToolBlock[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const overflow = items.length - MAX_CLUSTER;
+  const shown = expanded ? items : items.slice(0, MAX_CLUSTER);
+
+  return (
+    <div className="mb-1.5 flex flex-col">
+      {shown.map((t, i) => (
+        <ToolCard key={i} event={t} />
+      ))}
+      {overflow > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="py-0.5 pl-[24px] pr-2.5 text-left font-mono text-[11px] text-mutedlo hover:text-parch"
+        >
+          {expanded ? "− show less" : `+${overflow} more`}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -198,7 +222,7 @@ function LegacyAssistantContent({
           ))}
         </div>
       ) : null}
-      <div className="msg-content font-read text-[16px] leading-[1.62] text-agentbody">
+      <div className="msg-content font-read text-[15px] leading-[1.6] text-agentbody">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{ code: CodeComponent }}
